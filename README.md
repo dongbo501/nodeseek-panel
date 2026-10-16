@@ -158,7 +158,7 @@ python -m unittest discover -s tests -v
 
 代码结构：`nodeseek_signin.py` 为签到核心；`panel/web.py` 为网页 API 和鉴权；`panel/service.py` 为调度与历史；`panel/browser.py` 为临时浏览器与 Cookie 导入；`panel/static/` 与 `panel/templates/` 为前端。
 
-仓库的 GitHub Actions 会先运行测试，通过后构建 amd64/arm64 镜像。推送 `main` 更新 `latest` 与提交 SHA 标签，推送 `v*` 标签产生版本标签。Fork 后镜像名自动采用自己的仓库路径。首次发布 GHCR 包需设为 Public，才能无需登录拉取。
+仓库的 GitHub Actions 会先运行测试，再分别在 amd64 和 arm64 原生机器上构建并运行真实浏览器集成测试，两边通过后才发布多架构镜像。推送 `main` 更新 `latest` 与提交 SHA 标签，推送 `v*` 标签产生版本标签。Fork 后镜像名自动采用自己的仓库路径。首次发布 GHCR 包需设为 Public，才能无需登录拉取。
 
 ## 数据与边界
 
