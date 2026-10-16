@@ -103,6 +103,54 @@ class BrowserManager:
         finally:
             ws.close()
 
+    @staticmethod
+    def _command(ws, command_id, method, params=None):
+        ws.send(json.dumps({"id": command_id, "method": method, "params": params or {}}))
+        while True:
+            response = json.loads(ws.recv())
+            if response.get("id") == command_id:
+                if "error" in response:
+                    raise ValueError("浏览器暂时无法接收粘贴，请重新点击输入框后再试")
+                return response.get("result", {})
+
+    def paste_text(self, text):
+        """将临时文本插入远程页面当前输入框，不经过系统剪贴板或持久化存储。"""
+        if not isinstance(text, str) or not text or len(text) > 4096:
+            raise ValueError("请输入 1～4096 个字符的文本")
+        if any(char in text for char in ("\x00", "\r", "\n")):
+            raise ValueError("请粘贴单行账号、密码或验证码")
+        with self.lock:
+            if not self.status()["ready"]:
+                raise ValueError("请先打开容器浏览器并等待连接")
+            try:
+                with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=3) as response:
+                    pages = json.load(response)
+                for page in pages:
+                    if page.get("type") != "page" or not page.get("webSocketDebuggerUrl"):
+                        continue
+                    ws = websocket.create_connection(page["webSocketDebuggerUrl"], timeout=3, suppress_origin=True)
+                    try:
+                        focus = self._command(ws, 1, "Runtime.evaluate", {
+                            "expression": """(() => {
+                                let element = document.activeElement;
+                                while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
+                                const textInput = element?.tagName === 'INPUT' && ['text','password','email','search','tel','url','number'].includes(element.type);
+                                return document.hasFocus() && !!element && !element.disabled && !element.readOnly &&
+                                    (textInput || element.tagName === 'TEXTAREA' || element.isContentEditable);
+                            })()""", "returnByValue": True,
+                        })
+                        if focus.get("result", {}).get("value") is not True:
+                            continue
+                        self._command(ws, 2, "Input.insertText", {"text": text})
+                        return
+                    finally:
+                        ws.close()
+            except ValueError:
+                raise
+            except Exception:
+                raise ValueError("浏览器暂时无法接收粘贴，请重新点击输入框后再试") from None
+            raise ValueError("请先在容器浏览器中点击账号、密码或验证码输入框，再粘贴")
+
     def capture(self):
         with self.lock:
             if not self.status()["running"]:

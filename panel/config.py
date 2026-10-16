@@ -79,10 +79,11 @@ class ConfigStore:
                 cfg["cookie"] = os.environ["NODESEEK_COOKIE"].strip()
             return validate(cfg)
 
-    def public(self):
+    def for_admin(self):
+        """当前生效的完整配置；仅供通过管理员验证的接口返回。"""
         cfg = self.get()
         for key in SECRETS:
-            cfg[key + "_configured"] = bool(cfg.pop(key))
+            cfg[key + "_configured"] = bool(cfg[key])
         cfg["cookie_from_env"] = bool(os.environ.get("NODESEEK_COOKIE"))
         return cfg
 
@@ -106,4 +107,4 @@ class ConfigStore:
             cfg = validate(cfg)
             self._write(cfg)
             self.cfg = cfg
-        return self.public()
+        return self.for_admin()

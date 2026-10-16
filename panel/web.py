@@ -163,7 +163,7 @@ def create_app(data_dir=None, start_scheduler=True, runner=None):
     @app.get("/api/config")
     @login_required
     def get_config():
-        return jsonify(config.public())
+        return jsonify(config.for_admin())
 
     @app.put("/api/config")
     @login_required
@@ -211,6 +211,15 @@ def create_app(data_dir=None, start_scheduler=True, runner=None):
     def browser_stop():
         browser.close()
         return jsonify(browser.status())
+
+    @app.post("/api/browser/paste")
+    @login_required
+    def browser_paste():
+        body = request.get_json()
+        if not isinstance(body, dict):
+            raise ValueError("请求必须是 JSON 对象")
+        browser.paste_text(body.get("text"))
+        return jsonify(message="已粘贴到浏览器当前输入框")
 
     @app.get("/browser/<path:filename>")
     def browser_assets(filename):

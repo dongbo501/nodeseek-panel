@@ -1,1 +1,15 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NodeSeek 容器浏览器</title><link rel="stylesheet" href="/static/browser.css"><script type="module" src="/static/browser.js"></script></head><body><div id="connection-status" role="status">正在连接容器浏览器…</div><div id="screen"></div></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NodeSeek 容器浏览器</title><link rel="stylesheet" href="/static/browser.css"><script type="module" src="/static/browser.js"></script></head>
+<body>
+  <div id="connection-status" role="status">正在连接容器浏览器…</div>
+  <form id="paste-form" autocomplete="off">
+    <label for="paste-text">粘贴账号 / 密码</label>
+    <input id="paste-text" type="password" autocomplete="new-password" spellcheck="false" maxlength="4096" placeholder="在这里粘贴临时文本" aria-describedby="paste-help">
+    <button id="paste-send" type="submit" disabled>粘贴到当前输入框</button>
+    <small id="paste-help">先点击下方网页的输入框，再按 Ctrl / ⌘ + V；也可在此粘贴后点击发送，文本发送后清空。</small>
+    <span id="paste-status" role="status" aria-live="polite"></span>
+  </form>
+  <div id="screen"></div>
+</body>
+</html>

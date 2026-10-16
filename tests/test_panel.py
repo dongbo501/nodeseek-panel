@@ -66,15 +66,26 @@ class PanelTests(unittest.TestCase):
             self.assertEqual(self.request('login',{'password':'wrong'}).status_code,401)
         self.assertEqual(self.request('login',{'password':'wrong'}).status_code,429)
 
-    def test_secrets_never_returned_and_empty_preserves(self):
+    def test_admin_sees_saved_values_and_empty_preserves(self):
         self.login()
         secret = 'session=private-cookie-secret'
-        response = self.request('config',{'cookie':secret,'bark_url':'https://api.day.app/private-bark-key'},'PUT')
+        expected = {'cookie':secret,'bark_url':'https://api.day.app/private-bark-key','user_agent':'Fixture browser UA'}
+        response = self.request('config',expected,'PUT')
         self.assertEqual(response.status_code,200)
-        self.assertNotIn('private-',response.get_data(as_text=True))
+        for result in (response, self.client.get('/api/config')):
+            for key, value in expected.items():
+                self.assertEqual(result.json[key],value)
+            self.assertEqual(result.headers['Cache-Control'],'no-store')
+        anonymous = self.app.test_client().get('/api/config')
+        self.assertEqual(anonymous.status_code,401)
+        self.assertNotIn(secret,anonymous.get_data(as_text=True))
         self.request('config',{'cookie':'','bark_url':''},'PUT')
         self.assertEqual(self.store.get()['cookie'],secret)
-        self.request('config',{'clear_cookie':True,'clear_bark_url':True},'PUT')
+        cleared = self.request('config',{'clear_cookie':True,'clear_bark_url':True},'PUT')
+        self.assertEqual(cleared.json['cookie'],'')
+        self.assertEqual(cleared.json['bark_url'],'')
+        self.assertFalse(cleared.json['cookie_configured'])
+        self.assertFalse(cleared.json['bark_url_configured'])
         self.assertFalse(self.store.get()['cookie'])
         self.assertFalse(self.store.get()['bark_url'])
 
@@ -87,8 +98,9 @@ class PanelTests(unittest.TestCase):
     def test_environment_cookie_wins(self):
         with patch.dict(os.environ,{'NODESEEK_COOKIE':'session=environment-cookie'}):
             self.assertEqual(self.store.get()['cookie'],'session=environment-cookie')
-            self.assertTrue(self.store.public()['cookie_from_env'])
+            self.assertTrue(self.store.for_admin()['cookie_from_env'])
             self.login()
+            self.assertEqual(self.client.get('/api/config').json['cookie'],'session=environment-cookie')
             self.assertEqual(self.request('browser/start').status_code,400)
 
     def test_manual_missing_cookie(self):
@@ -148,12 +160,46 @@ class PanelTests(unittest.TestCase):
         self.assertEqual(self.client.get('/browser/ws',headers={'Origin':'https://attacker.example'}).status_code,403)
 
     def test_browser_capture_saves_cookie_and_ua(self):
+        self.login()
         browser = self.app.extensions['browser_manager']
         with patch.object(browser,'status',return_value={'running':True}), patch.object(browser,'_cdp',return_value=('session=captured','Browser UA')), patch.object(browser,'_cleanup') as cleanup:
             browser.capture()
             self.assertEqual(self.store.get()['cookie'],'session=captured')
             self.assertEqual(self.store.get()['user_agent'],'Browser UA')
+            self.assertEqual(self.client.get('/api/config').json['cookie'],'session=captured')
+            self.assertEqual(self.client.get('/api/config').json['user_agent'],'Browser UA')
             cleanup.assert_called_once()
+
+    def test_browser_paste_requires_login_and_csrf(self):
+        self.assertEqual(self.request('browser/paste',{'text':'fixture'}).status_code,401)
+        self.login()
+        self.assertEqual(self.client.post('/api/browser/paste',json={'text':'fixture'}).status_code,403)
+        browser = self.app.extensions['browser_manager']
+        with patch.object(browser,'paste_text') as paste:
+            text = 'fixture-password-秘密'
+            response = self.request('browser/paste',{'text':text})
+            self.assertEqual(response.status_code,200)
+            paste.assert_called_once_with(text)
+            self.assertNotIn(text,response.get_data(as_text=True))
+            self.assertNotIn(text,self.store.path.read_text())
+            self.assertEqual(self.service.history(),[])
+
+    def test_browser_paste_rejects_invalid_text_and_closed_browser(self):
+        self.login()
+        for text in (None,123,'','x'*4097,'line\nbreak','line\rbreak','null\x00byte'):
+            self.assertEqual(self.request('browser/paste',{'text':text}).status_code,400)
+        response = self.request('browser/paste',{'text':'fixture'})
+        self.assertEqual(response.status_code,400)
+        self.assertIn('请先打开',response.json['error'])
+
+    def test_browser_paste_errors_do_not_echo_payload(self):
+        self.login()
+        browser = self.app.extensions['browser_manager']
+        text = 'fixture-password-private'
+        with patch.object(browser,'status',return_value={'ready':True}), patch('panel.browser.urllib.request.urlopen',side_effect=RuntimeError(text)):
+            response = self.request('browser/paste',{'text':text})
+        self.assertEqual(response.status_code,400)
+        self.assertNotIn(text,response.get_data(as_text=True))
 
     def test_security_headers(self):
         r=self.client.get('/')

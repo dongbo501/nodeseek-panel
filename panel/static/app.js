@@ -10,16 +10,16 @@ async function api(path, method = 'GET', body) {
   if (!r.ok) { if (r.status === 401 && path !== 'login') showLogin(); throw new Error(data.error || '请求失败'); }
   return data;
 }
-function showLogin() { active = false; $('login').hidden = false; $('dashboard').hidden = true; $('browser-frame').removeAttribute('src'); }
+function showLogin() { active = false; config = null; lastImport = null; for (const id of ['cookie', 'user-agent', 'bark']) $(id).value = ''; $('login').hidden = false; $('dashboard').hidden = true; $('browser-frame').removeAttribute('src'); }
 function date(value, timeOnly = false) { if (!value) return '—'; return new Intl.DateTimeFormat('zh-CN', {timeZone: config?.timezone || 'Asia/Shanghai', ...(timeOnly ? {hour: '2-digit', minute: '2-digit', hour12: false} : {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})}).format(new Date(value)); }
 function fillConfig(c) {
   config = c; $('run-at').value = c.run_at; $('jitter').value = c.jitter_minutes; $('timezone').value = c.timezone;
   $('enabled').checked = c.enabled; $('random').checked = c.random; $('user-agent').value = c.user_agent;
-  $('cookie').value = ''; $('bark').value = ''; $('clear-cookie').checked = false; $('clear-bark').checked = false;
+  $('cookie').value = c.cookie; $('bark').value = c.bark_url; $('clear-cookie').checked = false; $('clear-bark').checked = false;
   $('cookie-status').textContent = c.cookie_from_env ? '环境变量配置' : c.cookie_configured ? 'Cookie 已配置' : '待配置 Cookie';
   $('cookie-status').className = 'badge' + (c.cookie_configured ? ' ok' : '');
-  $('bark-status').textContent = c.bark_url_configured ? '已配置 · 留空保留' : '可选';
-  $('cookie').disabled = c.cookie_from_env; $('clear-cookie').disabled = c.cookie_from_env;
+  $('bark-status').textContent = c.bark_url_configured ? '已配置' : '可选';
+  $('cookie').readOnly = c.cookie_from_env; $('clear-cookie').disabled = c.cookie_from_env;
   $('browser-start').disabled = c.cookie_from_env;
 }
 function renderStatus(s) {
@@ -50,7 +50,7 @@ async function renderBrowser(b) {
   $('browser-frame-wrap').hidden = !b.ready;
   if (b.ready && !$('browser-frame').getAttribute('src')) $('browser-frame').src = '/browser/view';
   if (!b.running) $('browser-frame').removeAttribute('src');
-  if (b.imported_at && b.imported_at !== lastImport) { lastImport = b.imported_at; fillConfig(await api('config')); toast('已自动导入 Cookie 和 User-Agent'); }
+  if (b.imported_at && b.imported_at !== lastImport) { lastImport = b.imported_at; fillConfig(await api('config')); showAccountMode('manual'); toast('已自动导入 Cookie 和 User-Agent，当前值已显示'); }
 }
 async function refresh() { if (!active || polling) return; polling = true; try { const [s,h,b] = await Promise.all([api('status'),api('history'),api('browser')]); renderStatus(s); renderHistory(h.items); await renderBrowser(b); } finally { polling = false; } }
 async function enter() { fillConfig(await api('config')); active = true; $('login').hidden = true; $('dashboard').hidden = false; await refresh(); }
@@ -64,6 +64,7 @@ action('refresh', refresh);
 action('browser-start', async () => { await renderBrowser(await api('browser/start','POST',{})); });
 action('browser-capture', async () => { await renderBrowser(await api('browser/capture','POST',{})); await refresh(); });
 action('browser-stop', async () => { await renderBrowser(await api('browser/stop','POST',{})); });
-for (const mode of ['manual', 'browser']) $(mode+'-tab').addEventListener('click', () => { for (const tab of ['manual','browser']) { $(tab+'-pane').hidden = tab !== mode; $(tab+'-tab').classList.toggle('selected',tab === mode); $(tab+'-tab').setAttribute('aria-selected',String(tab === mode)); } });
+function showAccountMode(mode) { for (const tab of ['manual','browser']) { $(tab+'-pane').hidden = tab !== mode; $(tab+'-tab').classList.toggle('selected',tab === mode); $(tab+'-tab').setAttribute('aria-selected',String(tab === mode)); } }
+for (const mode of ['manual', 'browser']) $(mode+'-tab').addEventListener('click', () => showAccountMode(mode));
 (async () => { try { const s = await api('session'); csrf = s.csrf; if (s.authenticated) await enter(); else showLogin(); } catch(e) { showLogin(); toast(e.message,true); } })();
 setInterval(() => refresh().catch(e => { if(active) toast(e.message,true); }),5000);
