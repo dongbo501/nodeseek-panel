@@ -39,7 +39,7 @@ docker compose pull
 docker compose up -d
 ```
 
-访问 **http://127.0.0.1:8080**，使用 `.env` 中的密码登录。默认只允许本机访问。远程服务器可使用 SSH 转发：
+访问 [http://127.0.0.1:8080](http://127.0.0.1:8080)，使用 `.env` 中的密码登录。默认只允许本机访问。远程服务器可使用 SSH 转发：
 
 ```bash
 ssh -L 8080:127.0.0.1:8080 user@your-server
