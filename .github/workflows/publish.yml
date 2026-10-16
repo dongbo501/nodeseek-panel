@@ -20,9 +20,21 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s tests -v
+  container-smoke:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t nodeseek-panel:smoke .
+      - name: Test real browser capture in container
+        run: >-
+          docker run --rm --cap-drop=ALL --security-opt=no-new-privileges:true
+          --shm-size=512m -e RUN_BROWSER_TESTS=1
+          -v "$PWD/tests:/app/tests:ro" --entrypoint python
+          nodeseek-panel:smoke -m unittest discover -s tests -v
   publish:
     if: github.event_name != 'pull_request'
-    needs: test
+    needs: [test, container-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read
