@@ -1,0 +1,14 @@
+config.json
+.env
+.env.*
+!.env.example
+data/
+*.log
+*.db
+*.sqlite*
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.DS_Store
+.tools/

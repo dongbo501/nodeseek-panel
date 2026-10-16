@@ -1,0 +1,1 @@
+html,body{margin:0;height:100%;font:12px/1.5 -apple-system,sans-serif;background:#222;color:#bdcfcb}body{display:flex;flex-direction:column}#connection-status{padding:8px 12px;background:#24352f;flex-shrink:0}#screen{flex:1;min-height:0;width:100%;overflow:hidden}

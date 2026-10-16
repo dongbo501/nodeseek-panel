@@ -1,0 +1,7 @@
+**
+!requirements.txt
+!nodeseek_signin.py
+!panel/
+!panel/**
+panel/**/__pycache__/
+!Dockerfile

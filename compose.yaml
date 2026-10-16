@@ -1,0 +1,22 @@
+services:
+  nodeseek:
+    image: ghcr.io/dongbo501/nodeseek-panel:latest
+    build: .
+    container_name: nodeseek-panel
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
+    environment:
+      TZ: Asia/Shanghai
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请复制 .env.example 为 .env 并设置至少 12 位管理密码}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      - nodeseek-data:/data
+    shm_size: 512mb
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
+volumes:
+  nodeseek-data:
