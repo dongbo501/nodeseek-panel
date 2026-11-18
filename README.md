@@ -2,9 +2,10 @@
 
 一个容器完成 NodeSeek 每日签到、网页管理和可视化登录。支持手动粘贴 Cookie，或在容器浏览器里亲自登录后自动导入 Cookie 与 User-Agent。
 
-- 中文管理面板：密码登录、每日定时、随机延迟、随机/固定奖励、立即签到。
+- 中文工作台：独立的总览、账号连接、自动化与执行记录视图，手机底部导航，支持浅色 / 深色 / 跟随系统。
+- 总览展示今日结果、下次执行、近 14 天签到足迹与最近动态；每日定时、随机延迟、随机/固定奖励、立即签到。
 - 两种登录方式：传统 Cookie 填写；内置 Chromium + noVNC 可视化登录，无需复制 Cookie。
-- Bark 结果通知，可选仅在签到失败时发送；最近 100 条可见记录，最多保留 1,000 条。
+- Bark 结果通知，可选仅在签到失败时发送；最近 100 条可见记录支持搜索、状态筛选、分页与 CSV 导出，最多保留 1,000 条。
 - `/data` 持久化配置、任务计划、执行记录和登录密钥；重启不丢配置。
 - 一个容器、一个对外端口 `8080`，不需要 Redis、数据库容器或独立浏览器服务。
 - `linux/amd64` / `linux/arm64` 镜像，适用于常见服务器、NAS 和 Apple Silicon。
@@ -14,6 +15,17 @@
 源码：[dongbo501/nodeseek-panel](https://github.com/dongbo501/nodeseek-panel)
 
 ![管理面板预览](docs/panel-preview.jpg)
+
+## 工作台
+
+- **总览**：今日签到、下次执行、成功 / 失败数量、14 天足迹和最近动态；统计基于接口返回的最近 100 条记录，不补造历史数据。
+- **账号连接**：手动填写 Cookie 或浏览器登录；账号凭据和自动化设置分别保存，切换视图保留草稿。
+- **自动化**：执行计划、奖励方式、Bark 通知；修改后可保存或撤销。外观主题支持浅色、深色和跟随系统。
+- **执行记录**：搜索、状态筛选、分页、展开完整结果以及 CSV 导出。手机端自动切换为带字段名称的纵向记录。
+
+![深色工作台预览](docs/panel-dark.jpg)
+
+以上预览使用隔离的模拟数据。
 
 ## 快速部署
 
@@ -76,14 +88,14 @@ docker logs nodeseek-panel
 2. 打开开发者工具（通常是 F12），进入 **Network / 网络**。
 3. 刷新页面，选择发往 `www.nodeseek.com` 的请求。
 4. 在 **Request Headers / 请求标头** 中复制完整的 `Cookie` 值，例如 `session=...; cf_clearance=...`，不要包含前面的 `Cookie:`。
-5. 打开管理面板的 **账号与 Cookie → 手动填写**，粘贴 Cookie；将 `User-Agent` 设置为同一请求的 User-Agent，保存。
+5. 打开管理面板的 **账号连接 → 手动填写 Cookie**，粘贴 Cookie；将 `User-Agent` 设置为同一请求的 User-Agent，点击 **保存连接**。
 6. 点击 **立即签到**，在执行记录中查看结果。
 
 登录管理面板后，Cookie、User-Agent 和 Bark 地址均显示当前完整值；保存或刷新页面后仍然显示。提交空的 Cookie / Bark 表示保留原值，只有勾选清除选项才会删除。配置接口仅向已登录的管理员返回这些值。
 
 ### 方式二：在容器浏览器中手工登录
 
-1. 打开 **账号与 Cookie → 容器浏览器登录**。
+1. 打开 **账号连接 → 浏览器登录**。
 2. 点击 **打开登录浏览器**，等待嵌入式浏览器连接。
 3. 在浏览器里亲自登录 NodeSeek，出现验证码时自行完成。需要粘贴账号或密码时，先点击网页中的对应输入框，再按 **Ctrl+V / ⌘+V**。若浏览器不允许读取剪贴板（例如通过 HTTP 访问远程服务器），把文本粘贴到上方的临时输入框，再点击 **粘贴到当前输入框**；发送后临时文本立即清空。
 4. 检测到 NodeSeek 的 `session` Cookie 后，面板自动读取该站点 Cookie（包括 HttpOnly Cookie）和浏览器的 User-Agent，保存到配置。
@@ -97,7 +109,7 @@ docker logs nodeseek-panel
 ## 计划、执行与通知
 
 - 默认时区 `Asia/Shanghai`，每天 `08:00` 起随机延迟 `0～10` 分钟。
-- 在 **计划与通知** 中修改时间、时区、随机延迟、自动签到开关及奖励方式；保存后立即生效。
+- 在 **自动化** 中修改时间、时区、随机延迟、自动签到开关及奖励方式；保存后立即生效。
 - 首次配置或修改计划时，如果今天的开始时间已过，则安排到明天。
 - 已持久化的任务因重启延迟：当天尚未执行的任务会补执行；跨天过期任务跳过，不批量补签。
 - 调度器领取任务后先持久化下一次计划，再开始执行，避免重启反复领取；执行过程中异常退出的任务标为结果未知，不自动重复提交。
@@ -163,9 +175,22 @@ python -m unittest discover -s tests -v
 
 开发时也可运行 `DATA_DIR=./data ADMIN_PASSWORD=你的12位以上密码 python -m panel`；容器浏览器功能需要 Linux 上安装 Chromium、Xvfb、x11vnc、noVNC，推荐直接用 Docker 测试。
 
-代码结构：`nodeseek_signin.py` 为签到核心；`panel/web.py` 为网页 API 和鉴权；`panel/service.py` 为调度与历史；`panel/browser.py` 为临时浏览器与 Cookie 导入；`panel/static/` 与 `panel/templates/` 为前端。
+前端预览和浏览器回归测试（Node.js 24，仅用于开发，不增加生产镜像依赖）：
 
-仓库的 GitHub Actions 会先运行测试，再分别在 amd64 和 arm64 原生机器上构建并运行真实浏览器集成测试，两边通过后才发布多架构镜像。推送 `main` 更新 `latest` 与提交 SHA 标签，推送 `v*` 标签产生版本标签。Fork 后镜像名自动采用自己的仓库路径。首次发布 GHCR 包需设为 Public，才能无需登录拉取。
+```bash
+npm ci
+npx playwright install chromium --only-shell
+# 终端一：隔离的临时数据、模拟签到，不使用真实账号或发送 Bark 通知
+python tests/preview_ui.py
+# 终端二：登录、保存、切页草稿、搜索、分页、导出、主题、手机布局和可访问性检查
+npm run test:ui
+```
+
+预览访问 `http://127.0.0.1:8765`，密码为 `preview-only-password`。仅绑定本机，关闭后清理临时数据。截图默认输出到系统临时目录下的 `nodeseek-ui`，可通过 `UI_OUTPUT_DIR` 修改。
+
+代码结构：`nodeseek_signin.py` 为签到核心；`panel/web.py` 为网页 API 和鉴权；`panel/service.py` 为调度与历史；`panel/browser.py` 为临时浏览器与 Cookie 导入；`panel/templates/index.html` 为应用外壳，`_overview.html`、`_account.html`、`_settings.html`、`_history.html` 为各视图。前端使用原生 HTML/CSS/JavaScript 与本地 Lucide 图标，无 CDN 或生产构建步骤。
+
+仓库的 GitHub Actions 会先运行 Python 与浏览器 UI 测试，再分别在 amd64 和 arm64 原生机器上构建并运行真实浏览器集成测试，两边通过后才发布多架构镜像。推送 `main` 更新 `latest` 与提交 SHA 标签，推送 `v*` 标签产生版本标签。Fork 后镜像名自动采用自己的仓库路径。首次发布 GHCR 包需设为 Public，才能无需登录拉取。
 
 ## 数据与边界
 

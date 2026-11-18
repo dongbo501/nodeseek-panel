@@ -1,2 +1,22 @@
-html,body{margin:0;height:100%;font:12px/1.5 -apple-system,sans-serif;background:#222;color:#bdcfcb}body{display:flex;flex-direction:column}#connection-status{padding:8px 12px;background:#24352f;flex-shrink:0}#screen{flex:1;min-height:0;width:100%;overflow:hidden}
-#paste-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:#edf5f2;color:#334b41;flex-shrink:0}#paste-form label{font-weight:600}#paste-text{min-width:120px;flex:1;border:1px solid #b9cec5;border-radius:5px;padding:8px;font:inherit}#paste-send{border:0;border-radius:5px;padding:9px 12px;background:#0a8070;color:#fff;cursor:pointer;font:inherit}#paste-send:disabled{opacity:.5;cursor:default}#paste-help{width:100%;font-size:11px;color:#60796d}#paste-status{width:100%;font-size:11px;color:#0a6657}#paste-status:empty{display:none}#paste-status.error{color:#a33d31}input:focus-visible,button:focus-visible{outline:2px solid #0a8070;outline-offset:2px}
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font: 13px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; background: #18191b; color: #e5e7eb; }
+body { display: flex; flex-direction: column; }
+#connection-status { padding: 10px 16px; background: #202123; color: #b1b3b8; border-bottom: 1px solid #35373d; flex-shrink: 0; font-size: 12px; }
+#screen { flex: 1; min-height: 0; width: 100%; overflow: hidden; }
+#paste-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; background: #27282c; flex-shrink: 0; }
+#paste-form label { font-weight: 550; }
+#paste-text { min-width: 120px; flex: 1; border: 1px solid #6c707a; border-radius: 5px; padding: 10px; font: inherit; background: #18191b; color: #edf0f3; }
+#paste-send { border: 1px solid #c6f27b; border-radius: 5px; padding: 10px 14px; background: #c6f27b; color: #263817; cursor: pointer; font: inherit; font-weight: 550; }
+#paste-send:hover { background: #b7e66a; }
+#paste-send:disabled { opacity: .5; cursor: default; }
+#paste-help, #paste-status { width: 100%; font-size: 12px; color: #b1b3b8; }
+#paste-status { color: #c6f27b; }
+#paste-status:empty { display: none; }
+#paste-status.error { color: #f0a7a0; }
+input:focus-visible, button:focus-visible { outline: 2px solid #c6f27b; outline-offset: 3px; }
+@media (max-width: 600px) {
+  #paste-form label { width: 100%; }
+  #paste-text { font-size: 16px; }
+  #paste-send { width: 100%; }
+}

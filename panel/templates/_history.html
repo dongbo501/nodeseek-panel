@@ -1,0 +1,11 @@
+<section id="history" class="view" data-page="history" hidden>
+  <div class="history-toolbar">
+    <div class="search-field">{{ icon('search') }}<label class="sr-only" for="history-search">搜索执行记录</label><input id="history-search" type="search" placeholder="搜索结果、时间或触发方式" autocomplete="off"></div>
+    <div class="history-actions"><label class="sr-only" for="history-filter">筛选执行状态</label><select id="history-filter"><option value="all">全部状态</option><option value="success">成功 / 已签到</option><option value="fail">执行失败</option><option value="running">正在执行</option></select><button id="export-history" class="icon-button bordered" type="button" aria-label="导出筛选后的记录" data-tooltip="导出 CSV">{{ icon('download') }}</button><button id="refresh" class="icon-button bordered" type="button" aria-label="刷新执行记录" data-tooltip="刷新记录">{{ icon('refresh-cw') }}</button></div>
+  </div>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="执行记录表格">
+    <table><caption class="sr-only">最近 100 条签到执行记录</caption><thead><tr><th scope="col">执行时间</th><th scope="col">触发方式</th><th scope="col">执行状态</th><th scope="col">结果详情</th></tr></thead><tbody id="history-body"></tbody></table>
+    <div id="empty-history" class="empty-state">{{ icon('search') }}<h2 id="empty-history-title">还没有执行记录</h2><p id="empty-history-description">完成首次签到后，即可在这里查看结果。</p></div>
+  </div>
+  <div class="history-footer"><span id="history-count">共 0 条记录</span><div class="pagination"><button id="previous-page" class="icon-button bordered" type="button" aria-label="上一页" disabled>{{ icon('chevron-left') }}</button><span id="page-number">1 / 1</span><button id="next-page" class="icon-button bordered" type="button" aria-label="下一页" disabled>{{ icon('chevron-right') }}</button></div></div>
+</section>
