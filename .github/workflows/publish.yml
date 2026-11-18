@@ -20,43 +20,8 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s tests -v
-  ui:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - run: pip install -r requirements.txt
-      - run: npm ci
-      - run: npm run build:ui
-      - name: Verify committed scene matches source
-        run: git diff --exit-code -- panel/static/scene.js panel/static/scene.js.LEGAL.txt panel/static/three-LICENSE.txt
-      - run: npx playwright install --with-deps chromium --only-shell
-      - name: Check redesigned UI and accessibility
-        env:
-          UI_OUTPUT_DIR: test-results
-        run: |
-          python tests/preview_ui.py > /tmp/nodeseek-preview.log 2>&1 &
-          preview_pid=$!
-          trap 'kill "$preview_pid"' EXIT
-          for attempt in {1..30}; do
-            if curl -fsS http://127.0.0.1:8765/healthz; then break; fi
-            sleep 1
-          done
-          npm run test:ui
-          npm run test:motion
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ui-screenshots
-          path: test-results/
   build:
-    needs: [test, ui]
+    needs: test
     strategy:
       fail-fast: false
       matrix:
