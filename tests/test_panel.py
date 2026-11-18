@@ -6,9 +6,10 @@ import threading
 import unittest
 import urllib.error
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
-from nodeseek_signin import check_in, execute_check_in, safe_message, TransientError
+from nodeseek_signin import check_in, execute_check_in, load_config, run_once, safe_message, TransientError
 from panel.browser import BrowserManager, extract_cookie
 from panel.config import ConfigStore
 from panel.service import Service, next_run
@@ -94,6 +95,53 @@ class PanelTests(unittest.TestCase):
         for change in ({'run_at':'25:00'},{'jitter_minutes':-1},{'enabled':'false'},{'timezone':'bad/timezone'},{'cookie':'a\nb'},{'bark_url':'http://unsafe.example/key'},{'unknown':True},{'user_agent':''}):
             self.assertEqual(self.request('config',change,'PUT').status_code,400,change)
         self.assertEqual(self.store.get()['run_at'],'08:00')
+
+    def test_bark_failure_only_setting_persists_and_validates(self):
+        self.login()
+        self.assertFalse(self.client.get('/api/config').json['bark_only_on_failure'])
+        for enabled in (True, False):
+            response = self.request('config', {'bark_only_on_failure': enabled}, 'PUT')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json['bark_only_on_failure'], enabled)
+            self.assertEqual(self.client.get('/api/config').json['bark_only_on_failure'], enabled)
+            self.assertEqual(ConfigStore(self.temp.name).get()['bark_only_on_failure'], enabled)
+            for invalid in ('false', 0, 1, None):
+                response = self.request('config', {'bark_only_on_failure': invalid, 'run_at': '09:00'}, 'PUT')
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(self.store.get()['bark_only_on_failure'], enabled)
+                self.assertEqual(ConfigStore(self.temp.name).get()['run_at'], '08:00')
+
+    def test_bark_policy_for_manual_and_scheduled_results(self):
+        for source in ('manual', 'scheduled'):
+            for only_failure in (False, True):
+                for status in ('ok', 'already', 'fail'):
+                    with self.subTest(source=source, only_failure=only_failure, status=status):
+                        self.store.update({'cookie': 'session=fixture-secret', 'bark_url': 'https://api.day.app/fixture-key', 'bark_only_on_failure': only_failure})
+                        self.service.runner = lambda cfg, **kw: (status, 'result fixture-secret')
+                        with patch('nodeseek_signin.send_bark') as notify:
+                            self.assertTrue(self.service.trigger(source, synchronous=True))
+                        row = self.service.history()[0]
+                        self.assertEqual(row['status'], status)
+                        self.assertEqual(row['source'], source)
+                        self.assertFalse(self.service.busy)
+                        if not only_failure or status == 'fail':
+                            notify.assert_called_once()
+                            self.assertEqual(notify.call_args.args[2], row['message'])
+                            self.assertNotIn('fixture-secret', notify.call_args.args[2])
+                        else:
+                            notify.assert_not_called()
+
+    def test_bark_failure_only_notifies_runner_errors(self):
+        self.store.update({'cookie': 'session=fixture-secret', 'bark_only_on_failure': True})
+        for outcome in (RuntimeError('fixture-secret'), ('unknown', 'fixture-secret')):
+            with self.subTest(outcome=outcome):
+                with patch.object(self.service, 'runner', side_effect=[outcome]), patch('nodeseek_signin.send_bark') as notify:
+                    self.service.trigger(synchronous=True)
+                row = self.service.history()[0]
+                self.assertEqual(row['status'], 'fail')
+                notify.assert_called_once_with(self.store.get(), 'NodeSeek 签到失败', row['message'])
+                self.assertNotIn('fixture-secret', row['message'])
+                self.assertFalse(self.service.busy)
 
     def test_environment_cookie_wins(self):
         with patch.dict(os.environ,{'NODESEEK_COOKIE':'session=environment-cookie'}):
@@ -208,6 +256,52 @@ class PanelTests(unittest.TestCase):
 
 
 class CoreTests(unittest.TestCase):
+    def test_legacy_config_and_standalone_bark_setting(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ):
+            os.environ.pop('NODESEEK_COOKIE', None)
+            path = Path(directory) / 'config.json'
+            path.write_text(json.dumps({'cookie': 'session=fixture'}))
+            with patch('nodeseek_signin.CONFIG_FILE', path):
+                self.assertFalse(load_config()['bark_only_on_failure'])
+                self.assertFalse(ConfigStore(directory).get()['bark_only_on_failure'])
+                for enabled in (True, False):
+                    path.write_text(json.dumps({'cookie': 'session=fixture', 'bark_only_on_failure': enabled}))
+                    self.assertEqual(load_config()['bark_only_on_failure'], enabled)
+                for invalid in ('false', 0, 1, None):
+                    path.write_text(json.dumps({'cookie': 'session=fixture', 'bark_only_on_failure': invalid}))
+                    with self.assertRaisesRegex(SystemExit, 'bark_only_on_failure'):
+                        load_config()
+
+    def test_standalone_bark_result_policy(self):
+        titles = {'ok': 'NodeSeek 签到成功', 'already': 'NodeSeek 今日已签到', 'fail': 'NodeSeek 签到失败'}
+        for policy in ({}, {'bark_only_on_failure': False}, {'bark_only_on_failure': True}):
+            for status, title in titles.items():
+                with self.subTest(policy=policy, status=status):
+                    cfg = {'bark_url': 'https://api.day.app/fixture-key', **policy}
+                    with patch('nodeseek_signin.execute_check_in', return_value=(status, 'fixture result')), patch('nodeseek_signin.send_bark') as notify:
+                        self.assertEqual(run_once(cfg), status != 'fail')
+                    if policy.get('bark_only_on_failure') and status != 'fail':
+                        notify.assert_not_called()
+                    else:
+                        notify.assert_called_once_with(cfg, title, 'fixture result')
+
+    def test_bark_only_notifies_final_retry_failure(self):
+        cfg = {'cookie': '', 'bark_only_on_failure': True}
+        for final_status in ('ok', 'fail'):
+            with self.subTest(final_status=final_status):
+                outcomes = [TransientError('retry'), TransientError('retry'), (final_status, 'final result')]
+                with patch('nodeseek_signin.check_in', side_effect=outcomes) as check, patch('nodeseek_signin.time.sleep'), patch('nodeseek_signin.send_bark') as notify:
+                    self.assertEqual(run_once(cfg), final_status == 'ok')
+                self.assertEqual(check.call_count, 3)
+                self.assertEqual(notify.call_count, int(final_status == 'fail'))
+
+    def test_missing_bark_url_never_sends(self):
+        for only_failure in (False, True):
+            with self.subTest(only_failure=only_failure):
+                with patch('nodeseek_signin.execute_check_in', return_value=('fail', 'fixture')), patch('nodeseek_signin.OPENER.open') as send:
+                    self.assertFalse(run_once({'bark_only_on_failure': only_failure}))
+                send.assert_not_called()
+
     def test_timezone_and_jitter(self):
         cfg={'timezone':'Asia/Shanghai','run_at':'08:00','jitter_minutes':10}
         class Rng:

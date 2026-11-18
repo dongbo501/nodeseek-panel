@@ -4,7 +4,7 @@
 
 - 中文管理面板：密码登录、每日定时、随机延迟、随机/固定奖励、立即签到。
 - 两种登录方式：传统 Cookie 填写；内置 Chromium + noVNC 可视化登录，无需复制 Cookie。
-- Bark 结果通知；最近 100 条可见记录，最多保留 1,000 条。
+- Bark 结果通知，可选仅在签到失败时发送；最近 100 条可见记录，最多保留 1,000 条。
 - `/data` 持久化配置、任务计划、执行记录和登录密钥；重启不丢配置。
 - 一个容器、一个对外端口 `8080`，不需要 Redis、数据库容器或独立浏览器服务。
 - `linux/amd64` / `linux/arm64` 镜像，适用于常见服务器、NAS 和 Apple Silicon。
@@ -32,7 +32,10 @@ ADMIN_PASSWORD=这里替换为至少12位的独立强密码
 BIND_ADDRESS=127.0.0.1
 PORT=8080
 COOKIE_SECURE=false
+HOST_DNS=172.17.0.1
 ```
+
+容器默认把 DNS 请求交给宿主机的 `172.17.0.1`（常见 Linux Docker 网桥地址）。宿主机需在该地址的 TCP/UDP 53 端口提供 DNS 服务；使用自定义网桥、Docker Desktop 或 OrbStack 时，请将 `HOST_DNS` 改为容器可访问且提供 DNS 服务的宿主机 IP。详见 [宿主机 DNS 配置](docs/DEPLOY.md#宿主机-dns)。
 
 ```bash
 docker compose pull
@@ -52,6 +55,7 @@ ssh -L 8080:127.0.0.1:8080 user@your-server
 ```bash
 docker run -d --name nodeseek-panel --restart unless-stopped \
   -p 127.0.0.1:8080:8080 \
+  --dns 172.17.0.1 \
   --shm-size=512m \
   --cap-drop=ALL --security-opt=no-new-privileges:true \
   -v nodeseek-data:/data \
@@ -59,6 +63,8 @@ docker run -d --name nodeseek-panel --restart unless-stopped \
 
 docker logs nodeseek-panel
 ```
+
+`--dns` 请按宿主机实际 DNS 地址调整；`docker run --env-file .env` 不会自动应用 `HOST_DNS`，必须显式传入 `--dns`。
 
 未设置 `ADMIN_PASSWORD` 时首次启动自动生成管理密码，仅在容器日志中显示一次，密码哈希保存在数据卷中。也可以使用 `--env-file .env` 指定密码。管理员密码与 NodeSeek 账号密码相互独立。
 
@@ -98,6 +104,7 @@ docker logs nodeseek-panel
 - 手动签到不改变每日计划。已有任务运行时拒绝重复启动；关闭自动签到仍允许手动执行。
 - 网络异常/临时服务错误最多尝试 3 次，间隔 60 秒；Cookie 失效或 Cloudflare 拒绝会提示更新。
 - 可填写 Bark 地址 `https://api.day.app/你的设备密钥`，结果自动推送。也支持自建 HTTPS Bark；推送失败不会把签到成功改为失败。
+- Bark 下方可开启 **仅在签到失败时发送通知**：成功或「今日已签到」不推送，最终失败才发送；手动签到和定时签到均适用。默认关闭，沿用原来的全部结果通知。独立脚本可在 `config.json` 设置 `"bark_only_on_failure": true`。
 - 可使用 `NODESEEK_COOKIE` 环境变量覆盖存储配置；此时面板禁用 Cookie 编辑和浏览器导入。通常建议直接使用面板管理。
 
 ## 从原 Python 脚本迁移

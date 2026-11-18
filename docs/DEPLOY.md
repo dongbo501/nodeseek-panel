@@ -21,6 +21,31 @@ sudo chown -R 10001:10001 data
 sudo chmod 700 data
 ```
 
+## 宿主机 DNS
+
+Compose 默认使用 `HOST_DNS=172.17.0.1`，即常见 Linux Docker 的宿主机网桥地址。该地址必须有 DNS 服务监听 TCP/UDP 53 端口，并允许来自容器网段的请求；仅在宿主机 `127.0.0.1` 或 `127.0.0.53` 监听的服务无法通过网桥访问。
+
+可以用下面的命令查看 Linux 默认 Docker 网桥的宿主机地址：
+
+```bash
+docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
+```
+
+若宿主机使用其他网桥地址，或使用 Docker Desktop / OrbStack，请在 `.env` 中将 `HOST_DNS` 改为容器可达且实际提供 DNS 服务的宿主机 IP。此项需要填写 IP，不能填写 `host.docker.internal` 或 `host-gateway`；也不要填写容器自己的 `127.0.0.1`。修改后重建容器：
+
+```bash
+docker compose up -d --force-recreate
+```
+
+验证已配置的 DNS 地址及域名解析：
+
+```bash
+docker inspect nodeseek-panel --format '{{json .HostConfig.Dns}}'
+docker compose exec nodeseek python -c "import socket; print(socket.getaddrinfo('www.nodeseek.com', 443))"
+```
+
+Compose 网络中的 `/etc/resolv.conf` 可能仍显示 Docker 内置 DNS `127.0.0.11`，它会把外部域名请求转发到这里设置的宿主机 DNS。若解析失败，检查 `HOST_DNS`、宿主机 DNS 监听地址和防火墙设置。
+
 ## 备份与恢复
 
 备份前先停止容器，确保 SQLite 数据一致。备份包含 Cookie 等敏感信息，请存放在受保护位置。
@@ -113,7 +138,7 @@ docker compose up -d --force-recreate
 
 **Bark 通知没有到达**
 
-确认完整 HTTPS 地址与设备密钥，检查容器日志中是否有通知失败。Bark 失败不影响签到结果，密钥不会写入日志。
+先检查是否开启「仅在签到失败时发送通知」：开启时，成功或今日已签到不会通知，最终失败才推送。确认完整 HTTPS 地址与设备密钥，检查容器日志中是否有通知失败。Bark 失败不影响签到结果，密钥不会写入日志。
 
 **健康检查**
 

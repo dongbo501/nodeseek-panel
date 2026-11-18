@@ -11,7 +11,7 @@ from nodeseek_signin import DEFAULT_UA
 
 DEFAULTS = {
     "cookie": "", "random": True, "run_at": "08:00", "jitter_minutes": 10,
-    "user_agent": DEFAULT_UA, "bark_url": "", "enabled": True,
+    "user_agent": DEFAULT_UA, "bark_url": "", "bark_only_on_failure": False, "enabled": True,
     "timezone": "Asia/Shanghai",
 }
 SECRETS = ("cookie", "bark_url")
@@ -20,7 +20,7 @@ SECRETS = ("cookie", "bark_url")
 def validate(cfg):
     if not isinstance(cfg, dict):
         raise ValueError("配置必须是 JSON 对象")
-    for key in ("random", "enabled"):
+    for key in ("random", "enabled", "bark_only_on_failure"):
         if type(cfg[key]) is not bool:
             raise ValueError(f"{key} 必须为布尔值")
     if not isinstance(cfg["run_at"], str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", cfg["run_at"]):

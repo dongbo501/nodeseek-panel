@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from nodeseek_signin import execute_check_in, send_bark, safe_message
+from nodeseek_signin import execute_check_in, notify_check_in, safe_message
 
 log = logging.getLogger("nodeseek")
 
@@ -112,8 +112,7 @@ class Service:
                 self.db.execute("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT 1000)")
                 self.db.commit()
             log.info("签到 %s: %s", status, message)
-            title = {"ok": "NodeSeek 签到成功", "already": "NodeSeek 今日已签到", "fail": "NodeSeek 签到失败"}[status]
-            send_bark(cfg, title, message)
+            notify_check_in(cfg, status, message)
         finally:
             with self.lock:
                 self.busy = False

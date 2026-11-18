@@ -16,6 +16,7 @@ function fillConfig(c) {
   config = c; $('run-at').value = c.run_at; $('jitter').value = c.jitter_minutes; $('timezone').value = c.timezone;
   $('enabled').checked = c.enabled; $('random').checked = c.random; $('user-agent').value = c.user_agent;
   $('cookie').value = c.cookie; $('bark').value = c.bark_url; $('clear-cookie').checked = false; $('clear-bark').checked = false;
+  $('bark-only-on-failure').checked = c.bark_only_on_failure;
   $('cookie-status').textContent = c.cookie_from_env ? '环境变量配置' : c.cookie_configured ? 'Cookie 已配置' : '待配置 Cookie';
   $('cookie-status').className = 'badge' + (c.cookie_configured ? ' ok' : '');
   $('bark-status').textContent = c.bark_url_configured ? '已配置' : '可选';
@@ -58,7 +59,7 @@ function action(id, fn, event = 'click') { $(id).addEventListener(event, async e
 action('login-form', async () => { const s = await api('session'); csrf = s.csrf; const r = await api('login', 'POST', {password: $('password').value}); csrf = r.csrf; $('password').value = ''; await enter(); }, 'submit');
 action('logout', async () => { await api('logout', 'POST', {}); showLogin(); });
 action('cookie-form', async () => { fillConfig(await api('config', 'PUT', {cookie: $('cookie').value, user_agent: $('user-agent').value, clear_cookie: $('clear-cookie').checked})); toast('登录配置已保存'); await refresh(); }, 'submit');
-action('settings-form', async () => { fillConfig(await api('config', 'PUT', {run_at: $('run-at').value, jitter_minutes: Number($('jitter').value), timezone: $('timezone').value, enabled: $('enabled').checked, random: $('random').checked, bark_url: $('bark').value, clear_bark_url: $('clear-bark').checked})); toast('设置已保存，签到计划已更新'); await refresh(); }, 'submit');
+action('settings-form', async () => { fillConfig(await api('config', 'PUT', {run_at: $('run-at').value, jitter_minutes: Number($('jitter').value), timezone: $('timezone').value, enabled: $('enabled').checked, random: $('random').checked, bark_url: $('bark').value, bark_only_on_failure: $('bark-only-on-failure').checked, clear_bark_url: $('clear-bark').checked})); toast('设置已保存，签到计划已更新'); await refresh(); }, 'submit');
 action('run', async () => { const r = await api('run','POST',{}); toast(r.message); await refresh(); });
 action('refresh', refresh);
 action('browser-start', async () => { await renderBrowser(await api('browser/start','POST',{})); });

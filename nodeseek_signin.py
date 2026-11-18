@@ -78,6 +78,7 @@ def load_config():
         "jitter_minutes": 10,
         "user_agent": DEFAULT_UA,
         "bark_url": "",
+        "bark_only_on_failure": False,
     }
     if CONFIG_FILE.exists():
         with CONFIG_FILE.open(encoding="utf-8") as f:
@@ -91,6 +92,8 @@ def load_config():
         raise SystemExit(
             "未配置 cookie：请填写 config.json 的 cookie 字段，或设置环境变量 NODESEEK_COOKIE"
         )
+    if type(cfg["bark_only_on_failure"]) is not bool:
+        raise SystemExit("config.json 配置有误：bark_only_on_failure 必须为布尔值")
     try:
         hour, minute = (int(x) for x in str(cfg["run_at"]).split(":"))
         if not (0 <= hour < 24 and 0 <= minute < 60):
@@ -170,6 +173,14 @@ def send_bark(cfg, title, body):
         log.warning("Bark 通知发送失败: %s", type(e).__name__)
 
 
+def notify_check_in(cfg, status, message):
+    """按通知设置推送最终签到结果，面板与独立脚本共用。"""
+    if cfg.get("bark_only_on_failure", False) and status != "fail":
+        return
+    title = {"ok": "NodeSeek 签到成功", "already": "NodeSeek 今日已签到", "fail": "NodeSeek 签到失败"}[status]
+    send_bark(cfg, title, message)
+
+
 def execute_check_in(cfg, stop_event=None):
     status, message = "fail", "网络异常，已重试 %d 次" % RETRIES
     for attempt in range(1, RETRIES + 1):
@@ -193,15 +204,12 @@ def run_once(cfg):
 
     if status == "ok":
         log.info("签到成功: %s", message)
-        title = "NodeSeek 签到成功"
     elif status == "already":
         log.info("今日已签到: %s", message)
-        title = "NodeSeek 今日已签到"
     else:
         log.error("签到失败: %s", message)
-        title = "NodeSeek 签到失败"
 
-    send_bark(cfg, title, message)
+    notify_check_in(cfg, status, message)
     return status != "fail"
 
 
