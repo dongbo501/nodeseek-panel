@@ -1,24 +1,21 @@
 <section id="overview" class="view" data-page="overview">
   <div id="setup-notice" class="notice" hidden>{{ icon('key-round') }}<div><strong>连接账号，开始第一次签到</strong><p>导入 NodeSeek Cookie 后即可启用自动化。</p></div><a href="#account" class="text-button">连接账号 {{ icon('arrow-right') }}</a></div>
-  <div class="status-band">
-    <div class="today-summary">
-      <div class="today-topline"><span class="overline">今日签到</span><span id="today-badge" class="dark-badge">等待执行</span></div>
-      <div class="today-main"><div><h2 id="today-status">新的一天，准备就绪</h2><p id="today-message">签到结果将在这里显示</p></div><span id="today-symbol" class="today-symbol">{{ icon('circle-dashed') }}</span></div>
-      <div class="today-bottomline"><span id="today-date">—</span><a href="#history">查看记录 {{ icon('arrow-up-right') }}</a></div>
-    </div>
-    <div class="next-summary"><div class="next-heading"><span class="overline">下一次执行</span>{{ icon('clock-3') }}</div><div id="next-run" class="next-time">--:--</div><p id="next-date">等待安排</p><div class="next-bottomline"><span id="schedule-status" class="badge">等待配置</span><a href="#schedule" class="text-button">调整计划 {{ icon('arrow-right') }}</a></div></div>
+  <div class="orbital-stage" id="orbital-stage" data-state="none">
+    <div class="scene-layer" id="scene-layer" aria-hidden="true"><div class="scene-fallback"><i></i><i></i><i></i></div><canvas id="orbit-canvas"></canvas></div>
+    <div class="today-summary stage-copy"><div class="today-topline"><span class="eyebrow">TODAY'S MISSION</span><span id="today-badge" class="badge">等待执行</span></div><h2 id="today-status">准备<br>就绪。</h2><p id="today-message">签到结果将在这里显示</p><div class="stage-actions"><button id="run" type="button" class="button primary launch-button" disabled><span data-button-label>立即签到</span>{{ icon('arrow-up-right') }}</button><span id="today-symbol" class="today-symbol">{{ icon('circle-dashed') }}</span></div><p id="today-date" class="stage-date">—</p></div>
+    <div class="stage-object-caption" aria-hidden="true"><span class="object-line"></span><span id="orbit-phase">READY TO CONNECT</span><span class="mono">NS—01</span></div>
+    <section class="next-module"><div class="next-module-top"><span class="eyebrow">UP NEXT</span>{{ icon('arrow-down-right') }}</div><h3>下一次执行</h3><div id="next-run" class="next-time">--:--</div><p id="next-date">等待安排</p><div class="countdown"><span>距离执行</span><strong id="countdown">--:--:--</strong></div><div class="next-module-bottom"><span id="schedule-status" class="badge">等待配置</span><a href="#schedule" class="text-button" aria-label="调整执行计划">{{ icon('arrow-up-right') }}</a></div></section>
+    <div class="stage-bottom"><span class="stage-coordinate">01 / DAILY ORBIT</span><span class="stage-index" aria-hidden="true">[ N / S ]</span><a href="#history">查看执行记录 {{ icon('arrow-down-right') }}</a></div>
   </div>
   <dl class="metrics">
-    <div><dt>{{ icon('circle-check') }}成功执行</dt><dd><span id="stat-success">0</span><small>含今日已签到</small></dd></div>
-    <div><dt>{{ icon('circle-x') }}执行失败</dt><dd><span id="stat-failed">0</span><small>可在记录中查看原因</small></dd></div>
-    <div><dt>{{ icon('chart-no-axes-combined') }}成功率</dt><dd><span id="stat-rate">—</span><small>最近 100 条已完成记录</small></dd></div>
-    <div><dt>{{ icon('zap') }}自动签到</dt><dd><span id="stat-automation">—</span><small id="schedule-description">正在读取配置</small></dd></div>
+    <div><dt>01 / 成功执行</dt><dd><span id="stat-success">0</span><small>含今日已签到</small></dd></div>
+    <div><dt>02 / 执行失败</dt><dd><span id="stat-failed">0</span><small>查看记录排查原因</small></dd></div>
+    <div><dt>03 / 成功率</dt><dd><span id="stat-rate">—</span><small>最近 100 条已完成记录</small></dd></div>
+    <div><dt>04 / 自动签到</dt><dd><span id="stat-automation">—</span><small id="schedule-description">正在读取配置</small></dd></div>
   </dl>
+  <section class="activity-section"><div class="section-heading"><div><span class="eyebrow">YOUR CONSISTENCY</span><h2>每一天，都有迹可循<span class="accent-text">↘</span></h2></div><span class="period-label">过去 14 天</span></div><div id="activity-days" class="activity-days" role="list" aria-label="近 14 天签到状态"></div><div class="activity-footer"><p id="activity-summary">暂无签到记录</p><div class="legend"><span><i class="legend-dot success"></i>成功</span><span><i class="legend-dot fail"></i>失败</span><span><i class="legend-dot none"></i>无记录</span></div></div></section>
   <div class="overview-columns">
-    <div class="overview-primary">
-      <section class="activity-section"><div class="section-heading"><h2>签到足迹</h2><span class="muted">近 14 天</span></div><div id="activity-days" class="activity-days" role="list" aria-label="近 14 天签到状态"></div><div class="activity-footer"><p id="activity-summary">暂无签到记录</p><div class="legend"><span><i class="legend-dot success"></i>成功</span><span><i class="legend-dot fail"></i>失败</span><span><i class="legend-dot none"></i>无记录</span></div></div></section>
-      <section class="recent-section"><div class="section-heading"><h2>最近动态</h2><a href="#history" class="text-button">全部记录 {{ icon('arrow-up-right') }}</a></div><ul id="recent-list" class="recent-list" role="list"></ul><div id="recent-empty" class="empty-state compact">{{ icon('inbox') }}<h3>还没有签到动态</h3><p>完成首次签到后，结果会显示在这里。</p></div></section>
-    </div>
-    <section class="configuration-summary"><div class="section-heading"><h2>运行配置</h2>{{ icon('settings-2') }}</div><dl><div><dt>账号状态</dt><dd id="summary-account">未连接</dd></div><div><dt>每日执行</dt><dd id="summary-time">—</dd></div><div><dt>随机延迟</dt><dd id="summary-jitter">—</dd></div><div><dt>奖励方式</dt><dd id="summary-reward">—</dd></div><div><dt>结果通知</dt><dd id="summary-notification">—</dd></div><div><dt>时区</dt><dd id="summary-timezone">—</dd></div></dl><a href="#schedule" class="button secondary full-width">管理自动化 {{ icon('arrow-right') }}</a><div class="last-execution"><span class="overline">最近一次执行</span><strong id="last-status">暂无记录</strong><span id="last-time">—</span></div></section>
+    <section class="recent-section"><div class="section-heading"><div><span class="eyebrow">ACTIVITY LOG</span><h2>最近动态</h2></div><a href="#history" class="text-button">全部记录 {{ icon('arrow-up-right') }}</a></div><ul id="recent-list" class="recent-list" role="list"></ul><div id="recent-empty" class="empty-state compact">{{ icon('inbox') }}<h3>还没有签到动态</h3><p>完成首次签到后，结果会显示在这里。</p></div></section>
+    <section class="configuration-summary"><div class="section-heading"><div><span class="eyebrow">SYSTEM SETUP</span><h2>运行配置</h2></div>{{ icon('settings-2') }}</div><dl><div><dt>账号状态</dt><dd id="summary-account">未连接</dd></div><div><dt>每日执行</dt><dd id="summary-time">—</dd></div><div><dt>随机延迟</dt><dd id="summary-jitter">—</dd></div><div><dt>奖励方式</dt><dd id="summary-reward">—</dd></div><div><dt>结果通知</dt><dd id="summary-notification">—</dd></div><div><dt>时区</dt><dd id="summary-timezone">—</dd></div></dl><a href="#schedule" class="button secondary full-width">管理自动化 {{ icon('arrow-up-right') }}</a><div class="last-execution"><span class="eyebrow">LAST EXECUTION</span><strong id="last-status">暂无记录</strong><span id="last-time">—</span></div></section>
   </div>
 </section>

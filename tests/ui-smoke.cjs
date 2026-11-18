@@ -33,6 +33,7 @@ const output = process.env.UI_OUTPUT_DIR || '/tmp/nodeseek-ui';
     await page.locator('#login-form [type=submit]').click();
     await page.locator('#dashboard').waitFor({state: 'visible'});
     await page.waitForFunction(() => document.querySelector('#stat-success').textContent !== '0');
+    await page.waitForFunction(() => document.querySelector('#scene-layer').dataset.ready === 'true');
     await page.locator('#toast-close').click();
     await page.screenshot({path: path.join(output, 'overview-desktop.png'), fullPage: true});
     await audit('overview light');
@@ -43,7 +44,9 @@ const output = process.env.UI_OUTPUT_DIR || '/tmp/nodeseek-ui';
     await view('schedule');
     await page.locator('#jitter').fill('27');
     await view('account');
-    await page.locator('#user-agent').fill('UI fixture browser');
+    // Reusing the preview server must still exercise an actual credential change.
+    const savedAgent = await page.locator('#user-agent').inputValue();
+    await page.locator('#user-agent').fill(savedAgent === 'UI fixture browser' ? 'UI fixture browser alternate' : 'UI fixture browser');
     await page.locator('#cookie-form [type=submit]').click();
     await page.waitForFunction(() => document.querySelector('#cookie-save-state').textContent.includes('所有更改已保存'));
     await view('schedule');

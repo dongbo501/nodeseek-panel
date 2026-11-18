@@ -2,8 +2,8 @@
 
 一个容器完成 NodeSeek 每日签到、网页管理和可视化登录。支持手动粘贴 Cookie，或在容器浏览器里亲自登录后自动导入 Cookie 与 User-Agent。
 
-- 中文工作台：独立的总览、账号连接、自动化与执行记录视图，手机底部导航，支持浅色 / 深色 / 跟随系统。
-- 总览展示今日结果、下次执行、近 14 天签到足迹与最近动态；每日定时、随机延迟、随机/固定奖励、立即签到。
+- 动态控制台：顶部导航、开放式 3D 轨道、朱红与冰青配色；独立的总览、账号连接、自动化与执行记录视图，手机底部导航，支持浅色 / 深色 / 跟随系统。
+- 总览展示今日结果、下次执行倒计时、近 14 天签到足迹与最近动态；每日定时、随机延迟、随机/固定奖励、立即签到。
 - 两种登录方式：传统 Cookie 填写；内置 Chromium + noVNC 可视化登录，无需复制 Cookie。
 - Bark 结果通知，可选仅在签到失败时发送；最近 100 条可见记录支持搜索、状态筛选、分页与 CSV 导出，最多保留 1,000 条。
 - `/data` 持久化配置、任务计划、执行记录和登录密钥；重启不丢配置。
@@ -14,11 +14,14 @@
 
 源码：[dongbo501/nodeseek-panel](https://github.com/dongbo501/nodeseek-panel)
 
-![管理面板预览](docs/panel-preview.jpg)
+![动态控制台预览](docs/panel-orbit.jpg)
+
+[查看完整总览](docs/panel-preview.jpg)
 
 ## 工作台
 
-- **总览**：今日签到、下次执行、成功 / 失败数量、14 天足迹和最近动态；统计基于接口返回的最近 100 条记录，不补造历史数据。
+- **总览**：3D 轨道响应签到状态和鼠标，14 个轨道标记映射近 14 天结果；今日签到、下次执行倒计时、成功 / 失败数量、签到足迹和最近动态均使用真实接口数据，统计基于最近 100 条记录。
+- **动效控制**：顶部按钮可暂停并记住偏好；遵循系统“减少动态效果”，切页、移出视口或隐藏标签页后停止渲染。不支持 WebGL 时显示静态轨道，签到操作保持可用。
 - **账号连接**：手动填写 Cookie 或浏览器登录；账号凭据和自动化设置分别保存，切换视图保留草稿。
 - **自动化**：执行计划、奖励方式、Bark 通知；修改后可保存或撤销。外观主题支持浅色、深色和跟随系统。
 - **执行记录**：搜索、状态筛选、分页、展开完整结果以及 CSV 导出。手机端自动切换为带字段名称的纵向记录。
@@ -179,18 +182,21 @@ python -m unittest discover -s tests -v
 
 ```bash
 npm ci
+npm run build:ui
 npx playwright install chromium --only-shell
 # 终端一：隔离的临时数据、模拟签到，不使用真实账号或发送 Bark 通知
 python tests/preview_ui.py
 # 终端二：登录、保存、切页草稿、搜索、分页、导出、主题、手机布局和可访问性检查
 npm run test:ui
+# 真实 WebGL 像素、运动、暂停、状态联动、小屏构图和静态回退
+npm run test:motion
 ```
 
 预览访问 `http://127.0.0.1:8765`，密码为 `preview-only-password`。仅绑定本机，关闭后清理临时数据。截图默认输出到系统临时目录下的 `nodeseek-ui`，可通过 `UI_OUTPUT_DIR` 修改。
 
-代码结构：`nodeseek_signin.py` 为签到核心；`panel/web.py` 为网页 API 和鉴权；`panel/service.py` 为调度与历史；`panel/browser.py` 为临时浏览器与 Cookie 导入；`panel/templates/index.html` 为应用外壳，`_overview.html`、`_account.html`、`_settings.html`、`_history.html` 为各视图。前端使用原生 HTML/CSS/JavaScript 与本地 Lucide 图标，无 CDN 或生产构建步骤。
+代码结构：`nodeseek_signin.py` 为签到核心；`panel/web.py` 为网页 API 和鉴权；`panel/service.py` 为调度与历史；`panel/browser.py` 为临时浏览器与 Cookie 导入；`panel/templates/index.html` 为应用外壳，`_overview.html`、`_account.html`、`_settings.html`、`_history.html` 为各视图。前端使用原生 HTML/CSS/JavaScript、本地 Lucide 图标和 Three.js，无 CDN。修改 `panel/frontend/scene.js` 后运行 `npm run build:ui`，将生成的 `panel/static/scene.js` 及许可证文件一同提交；生产镜像直接提供已构建资源，无需 Node.js。
 
-仓库的 GitHub Actions 会先运行 Python 与浏览器 UI 测试，再分别在 amd64 和 arm64 原生机器上构建并运行真实浏览器集成测试，两边通过后才发布多架构镜像。推送 `main` 更新 `latest` 与提交 SHA 标签，推送 `v*` 标签产生版本标签。Fork 后镜像名自动采用自己的仓库路径。首次发布 GHCR 包需设为 Public，才能无需登录拉取。
+仓库的 GitHub Actions 会先运行 Python、浏览器 UI、可访问性和 WebGL 动效测试，并核对已提交的场景产物与源码一致，再分别在 amd64 和 arm64 原生机器上构建并运行真实浏览器集成测试，两边通过后才发布多架构镜像。推送 `main` 更新 `latest` 与提交 SHA 标签，推送 `v*` 标签产生版本标签。Fork 后镜像名自动采用自己的仓库路径。首次发布 GHCR 包需设为 Public，才能无需登录拉取。
 
 ## 数据与边界
 

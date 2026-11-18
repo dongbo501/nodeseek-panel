@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const labels = {ok: '签到成功', already: '今日已签到', fail: '执行失败', running: '正在执行'};
 const views = {
-  overview: ['签到总览', 'WORKSPACE OVERVIEW', ''],
+  overview: ['NodeSeek.', 'THE DAILY ORBIT', ''],
   account: ['账号连接', 'ACCOUNT CONNECTION', '管理 NodeSeek 登录会话与浏览器凭据。'],
   schedule: ['自动化', 'AUTOMATION', '安排执行时间、奖励方式与结果通知。'],
   history: ['执行记录', 'EXECUTION HISTORY', '追踪每一次签到，查看结果与执行详情。'],
@@ -12,6 +12,21 @@ const state = {active: false, generation: 0, csrf: '', config: null, status: nul
 const baselines = {cookie: '', settings: ''};
 const pending = new Set();
 let refreshPromise = null, toastTimer, historySignature = '', searchTimer;
+let metricsSignature = '', activeTransition = null;
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let motionPaused = false;
+try { motionPaused = localStorage.getItem('nodeseek-motion') === 'paused'; } catch {}
+function syncMotion() {
+  const enabled = !reducedMotion.matches && !motionPaused;
+  document.body.dataset.motion = enabled ? 'on' : 'off';
+  document.querySelectorAll('.motion-toggle').forEach(button => {
+    const label = reducedMotion.matches ? '系统已关闭动态效果' : enabled ? '暂停动效' : '启用动效';
+    button.setAttribute('aria-label', label); button.dataset.tooltip = label;
+    button.disabled = reducedMotion.matches;
+    button.replaceChildren(icon(enabled ? 'pause' : 'play'));
+  });
+  document.dispatchEvent(new Event('nodeseek:motion'));
+}
 
 function icon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -22,7 +37,15 @@ function icon(name) {
   svg.append(use);
   return svg;
 }
-function text(id, value) { $(id).textContent = value; }
+function text(id, value) {
+  const element = $(id), next = String(value);
+  if (element.textContent === next) return;
+  element.textContent = next;
+  if (id.startsWith('stat-') && document.body.dataset.motion === 'on' && !reducedMotion.matches) {
+    element.getAnimations().forEach(animation => animation.cancel());
+    element.animate([{opacity: .3, transform: 'translateY(10px)'}, {opacity: 1, transform: 'translateY(0)'}], {duration: 450, easing: 'ease-out'});
+  }
+}
 function success(row) { return row && (row.status === 'ok' || row.status === 'already'); }
 function resultIcon(status) { return status === 'fail' ? 'circle-x' : status === 'running' ? 'loader-circle' : 'circle-check'; }
 function badge(status, label) {
@@ -67,8 +90,17 @@ function timeOnly(value) { return date(value, {hour: '2-digit', minute: '2-digit
 function currentView() { return Object.hasOwn(views, location.hash.slice(1)) ? location.hash.slice(1) : state.view; }
 function navigate(view, focus = true) {
   if (!state.active) return;
+  if (activeTransition) activeTransition.skipTransition();
+  const update = () => applyView(view, focus);
+  if (!focus || !document.startViewTransition || reducedMotion.matches || document.body.dataset.motion !== 'on' || view === state.view) { update(); return; }
+  activeTransition = document.startViewTransition(update);
+  activeTransition.finished.catch(() => {}).finally(() => { activeTransition = null; });
+}
+function applyView(view, focus = true) {
+  if (!state.active) return;
   if (!Object.hasOwn(views, view)) view = 'overview';
   state.view = view;
+  document.body.dataset.view = view;
   document.querySelectorAll('[data-page]').forEach(panel => { panel.hidden = panel.dataset.page !== view; });
   document.querySelectorAll('[data-view]').forEach(link => {
     if (link.dataset.view === view) link.setAttribute('aria-current', 'page');
@@ -76,22 +108,28 @@ function navigate(view, focus = true) {
   });
   const [title, kicker, description] = views[view];
   text('page-title', title);
+  if (view === 'overview') {
+    const dot = document.createElement('span'); dot.className = 'accent-text'; dot.textContent = '.';
+    $('page-title').replaceChildren(document.createTextNode('NodeSeek'), dot);
+  }
   text('breadcrumb-current', view === 'overview' ? '总览' : title);
   text('page-kicker', kicker);
   text('page-description', description || date(new Date(), {year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'}));
   $('overview-actions').hidden = view !== 'overview';
   document.title = `${title} · NodeSeek`;
   if (focus) { $('page-title').focus({preventScroll: true}); window.scrollTo({top: 0, behavior: 'instant'}); }
+  document.dispatchEvent(new Event('nodeseek:view'));
 }
 function showLogin() {
   state.active = false; state.generation += 1; state.config = null; state.status = null; state.history = []; state.browser = null; state.lastImport = null;
   $('boot').hidden = true; $('login').hidden = false; $('dashboard').hidden = true;
   $('browser-frame').removeAttribute('src');
   for (const id of ['cookie', 'user-agent', 'bark']) $(id).value = '';
-  baselines.cookie = ''; baselines.settings = ''; historySignature = '';
+  baselines.cookie = ''; baselines.settings = ''; historySignature = ''; metricsSignature = '';
   $('history-body').replaceChildren(); $('recent-list').replaceChildren();
   document.title = '登录 · NodeSeek';
   $('password').focus({preventScroll: true});
+  document.dispatchEvent(new Event('nodeseek:view'));
 }
 function payload(group) {
   if (group === 'cookie') return {cookie: $('cookie').value, user_agent: $('user-agent').value, clear_cookie: $('clear-cookie').checked};
@@ -156,6 +194,19 @@ function renderStatus(s) {
   text('last-status', s.last_result ? labels[s.last_result.status] || '未知状态' : '暂无记录');
   text('last-time', s.last_result ? fullDate(s.last_result.started_at) : '等待首次执行');
   renderToday();
+  updateCountdown();
+}
+function updateCountdown() {
+  if (!state.active || !state.status?.next_run) { text('countdown', '--:--:--'); return; }
+  const seconds = Math.max(0, Math.floor((new Date(state.status.next_run) - Date.now()) / 1000));
+  const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60);
+  text('countdown', [hours, minutes, seconds % 60].map(value => String(value).padStart(2, '0')).join(':'));
+}
+function updateScene(phase, days = window.nodeseekScene?.days || []) {
+  const next = {phase, days};
+  if (JSON.stringify(next) === JSON.stringify(window.nodeseekScene)) return;
+  window.nodeseekScene = next;
+  document.dispatchEvent(new CustomEvent('nodeseek:scene', {detail: next}));
 }
 function renderToday() {
   const today = dayKey(new Date());
@@ -164,14 +215,17 @@ function renderToday() {
   const current = rows[0];
   const status = state.status?.running ? 'running' : done ? 'ok' : current?.status || 'none';
   const content = {
-    ok: ['今天的签到，已完成', done?.message || '今日已签到', '已完成', 'circle-check'],
-    fail: ['这次签到未能完成', current?.message || '查看记录后重试', '需要关注', 'circle-x'],
-    running: ['正在为你签到', '正在等待 NodeSeek 返回结果', '执行中', 'loader-circle'],
-    none: [state.config?.cookie_configured ? '准备好，开始新一天' : '从连接账号开始', state.config?.cookie_configured ? '今日还没有签到记录' : '导入登录凭据，即可安排每日签到', '等待执行', 'circle-dashed'],
+    ok: ['今日任务\n已完成。', done?.message || '今日已签到', '已完成', 'circle-check'],
+    fail: ['需要一次\n重试。', current?.message || '查看记录后重试', '需要关注', 'circle-x'],
+    running: ['签到进行\n中。', '正在等待 NodeSeek 返回结果', '执行中', 'loader-circle'],
+    none: [state.config?.cookie_configured ? '新的一天\n已就绪。' : '连接账号\n即刻出发。', state.config?.cookie_configured ? '今日还没有签到记录' : '导入登录凭据，即可安排每日签到', '等待执行', 'circle-dashed'],
   }[status] || ['等待执行', '暂无签到结果', '等待执行', 'circle-dashed'];
   text('today-status', content[0]); text('today-message', content[1]); text('today-badge', content[2]);
   $('today-symbol').replaceChildren(icon(content[3]));
   document.querySelector('.today-summary').dataset.state = status;
+  $('orbital-stage').dataset.state = status;
+  text('orbit-phase', {ok: 'MISSION COMPLETE', fail: 'RETRY REQUIRED', running: 'CHECK-IN IN PROGRESS', none: 'READY TO CONNECT'}[status] || 'READY');
+  updateScene(status);
   text('today-date', date(new Date(), {month: 'long', day: 'numeric', weekday: 'long'}));
 }
 function renderMetrics() {
@@ -181,24 +235,31 @@ function renderMetrics() {
   text('stat-rate', completed.length ? `${Math.round(ok / completed.length * 100)}%` : '—');
   text('history-nav-count', state.history.length);
   renderToday();
+  const signature = JSON.stringify([state.history, state.config?.timezone, dayKey(new Date())]);
+  if (signature === metricsSignature) return;
+  metricsSignature = signature;
   const today = dayKey(new Date());
   const day = new Date(`${today}T12:00:00Z`);
   const fragment = document.createDocumentFragment();
   let successfulDays = 0;
+  const dayStates = [];
   for (let offset = 13; offset >= 0; offset--) {
     const d = new Date(day); d.setUTCDate(d.getUTCDate() - offset);
     const key = d.toISOString().slice(0, 10);
     const rows = state.history.filter(row => dayKey(row.started_at) === key);
     const result = rows.some(success) ? 'success' : rows.some(row => row.status === 'running') ? 'running' : rows.length ? 'fail' : 'none';
     if (result === 'success') successfulDays++;
+    dayStates.push(result);
     const title = `${key}：${{success: '签到成功', fail: '执行失败', running: '正在执行', none: '无记录'}[result]}`;
     const item = document.createElement('div'); item.className = `activity-day ${result}${offset === 0 ? ' today' : ''}`; item.setAttribute('role', 'listitem'); item.setAttribute('aria-label', title); item.title = title;
+    item.style.setProperty('--day-index', String(13 - offset));
     const tile = document.createElement('span'); tile.className = 'activity-tile';
     tile.append(icon({success: 'check', fail: 'x', running: 'loader-circle', none: 'minus'}[result]));
     const label = document.createElement('small'); label.textContent = offset === 0 ? '今' : String(d.getUTCDate()).padStart(2, '0'); label.setAttribute('aria-hidden', 'true');
     item.append(tile, label); fragment.append(item);
   }
   $('activity-days').replaceChildren(fragment);
+  updateScene(window.nodeseekScene?.phase || 'none', dayStates);
   text('activity-summary', `近 14 天有 ${successfulDays} 天签到成功 · 最近 100 条内`);
   const recent = document.createDocumentFragment();
   for (const row of state.history.slice(0, 4)) {
@@ -389,9 +450,17 @@ window.addEventListener('storage', event => {
   if (event.key === 'nodeseek-theme' || event.key === null) { themeMeta.content = ['light', 'dark'].includes(event.newValue) ? event.newValue : 'light dark'; syncThemeControl(); }
 });
 syncThemeControl();
+document.querySelectorAll('.motion-toggle').forEach(button => button.addEventListener('click', () => {
+  motionPaused = !motionPaused;
+  try { if (motionPaused) localStorage.setItem('nodeseek-motion', 'paused'); else localStorage.removeItem('nodeseek-motion'); } catch {}
+  syncMotion();
+}));
+reducedMotion.addEventListener('change', syncMotion);
+syncMotion();
 (async () => {
   try { const session = await api('session'); state.csrf = session.csrf; if (session.authenticated) await enter(); else showLogin(); }
   catch (error) { if (!state.active) showLogin(); toast(error.message, true); }
 })();
 setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 5000);
+setInterval(() => { if (!document.hidden && state.active && state.view === 'overview') updateCountdown(); }, 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(() => {}); });

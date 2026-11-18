@@ -7,14 +7,14 @@ body { display: flex; flex-direction: column; }
 #paste-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; background: #27282c; flex-shrink: 0; }
 #paste-form label { font-weight: 550; }
 #paste-text { min-width: 120px; flex: 1; border: 1px solid #6c707a; border-radius: 5px; padding: 10px; font: inherit; background: #18191b; color: #edf0f3; }
-#paste-send { border: 1px solid #c6f27b; border-radius: 5px; padding: 10px 14px; background: #c6f27b; color: #263817; cursor: pointer; font: inherit; font-weight: 550; }
-#paste-send:hover { background: #b7e66a; }
+#paste-send { border: 1px solid #ff7155; border-radius: 2px; padding: 10px 14px; background: #ff7155; color: #25110b; cursor: pointer; font: inherit; font-weight: 550; }
+#paste-send:hover { background: #ff947e; }
 #paste-send:disabled { opacity: .5; cursor: default; }
 #paste-help, #paste-status { width: 100%; font-size: 12px; color: #b1b3b8; }
-#paste-status { color: #c6f27b; }
+#paste-status { color: #b7f3ed; }
 #paste-status:empty { display: none; }
 #paste-status.error { color: #f0a7a0; }
-input:focus-visible, button:focus-visible { outline: 2px solid #c6f27b; outline-offset: 3px; }
+input:focus-visible, button:focus-visible { outline: 2px solid #ff947e; outline-offset: 3px; }
 @media (max-width: 600px) {
   #paste-form label { width: 100%; }
   #paste-text { font-size: 16px; }

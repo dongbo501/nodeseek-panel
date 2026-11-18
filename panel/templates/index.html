@@ -8,58 +8,47 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <script src="{{ url_for('static', filename='theme.js') }}"></script>
-  <title>NodeSeek · 签到工作台</title>
+  <title>NodeSeek · 每日控制台</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='scene.js') }}"></script>
 </head>
-<body>
+<body data-motion="on">
   <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
   <div id="alerts" class="sr-only" role="alert" aria-atomic="true"></div>
   <div id="toast" class="toast" hidden>{{ icon('circle-check') }}<span id="toast-message"></span><button id="toast-close" class="icon-button" type="button" aria-label="关闭提示">{{ icon('x') }}</button></div>
-  <div id="boot" class="boot"><span class="brand-mark" aria-hidden="true">N</span><p>正在连接工作台</p><progress aria-label="加载工作台"></progress></div>
+  <div id="boot" class="boot"><span class="brand-mark" aria-hidden="true">N<span>↗</span></span><p>连接你的每日轨道</p><progress aria-label="加载工作台"></progress></div>
   <noscript><p class="no-script">请启用 JavaScript 后使用签到工作台。</p></noscript>
   <main id="app">
     <section id="login" class="login-shell" hidden>
-      <div class="login-brand brand"><span class="brand-mark" aria-hidden="true">N</span><span>NodeSeek<span class="brand-caption">签到工作台</span></span></div>
+      <header class="login-header"><div class="brand"><span class="brand-mark" aria-hidden="true">N<span>↗</span></span><span>NodeSeek<span class="brand-caption">DAILY CONTROL</span></span></div><span class="edition">个人控制台 / 01</span></header>
+      <div class="login-art" aria-hidden="true"><span class="login-word">STAY<br>IN ORBIT.</span><div class="login-orbit"><i></i><i></i><i></i></div><span class="login-art-note">YOUR NEXT DAY, ALREADY IN MOTION.</span></div>
       <div class="login-content">
-        <div class="login-symbol">{{ icon('fingerprint') }}</div>
-        <p class="eyebrow">NODESEEK / WORKSPACE</p>
-        <h1>登录你的工作台</h1><p class="login-description">每日签到，按自己的节奏。</p>
-        <form id="login-form">
-          <label for="password">管理密码</label>
-          <div class="password-input"><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="输入管理密码" aria-describedby="login-error"><button id="password-toggle" class="icon-button" type="button" aria-label="显示密码" aria-pressed="false" data-tooltip="显示密码">{{ icon('eye') }}</button></div>
-          <p id="login-error" class="field-error" hidden></p>
-          <button class="button primary login-submit" type="submit"><span data-button-label>进入工作台</span>{{ icon('arrow-right') }}</button>
-        </form>
+        <p class="eyebrow"><span class="status-dot"></span> CONNECTION / PRIVATE</p>
+        <h1>回到<br>你的轨道<span class="accent-text">.</span></h1><p class="login-description">NodeSeek 每日签到控制台</p>
+        <form id="login-form"><label for="password">管理密码</label><div class="password-input"><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="输入管理密码" aria-describedby="login-error"><button id="password-toggle" class="icon-button" type="button" aria-label="显示密码" aria-pressed="false" data-tooltip="显示密码">{{ icon('eye') }}</button></div><p id="login-error" class="field-error" hidden></p><button class="button primary login-submit" type="submit"><span data-button-label>进入控制台</span>{{ icon('arrow-up-right') }}</button></form>
         <details class="login-help"><summary>在哪里找到管理密码？</summary><p>使用部署时设置的 ADMIN_PASSWORD。未设置时，首次启动生成的密码可在容器日志中查看。</p></details>
       </div>
-      <footer class="login-footer">{{ icon('shield-check') }}<span>凭据保存在你的容器中</span></footer>
+      <footer class="login-footer"><span>{{ icon('shield-check') }} 凭据保存在你的容器中</span><button class="motion-toggle icon-button" type="button" aria-label="暂停动效" data-tooltip="暂停动效">{{ icon('pause') }}</button><span class="mono">NODESEEK / EVERY DAY</span></footer>
     </section>
     <div id="dashboard" hidden>
       <a href="#page-title" class="skip-link">跳至主要内容</a>
-      <aside class="sidebar">
-        <a class="brand" href="#overview"><span class="brand-mark" aria-hidden="true">N</span><span>NodeSeek<span class="brand-caption">签到工作台</span></span></a>
-        <div class="workspace-identity"><span class="workspace-avatar">{{ icon('command') }}</span><div><strong>个人工作空间</strong><small>Personal workspace</small></div></div>
-        <p class="nav-label">工作空间</p>
-        <nav class="primary-nav" aria-label="工作空间">
-          <a href="#overview" data-view="overview" aria-current="page">{{ icon('layout-dashboard') }}<span>总览</span><span class="nav-active-mark" aria-hidden="true"></span></a>
-          <a href="#account" data-view="account">{{ icon('key-round') }}<span>账号连接</span><span id="account-nav-dot" class="nav-warning" hidden></span></a>
-          <a href="#schedule" data-view="schedule">{{ icon('sliders-horizontal') }}<span>自动化</span></a>
-          <a href="#history" data-view="history">{{ icon('history') }}<span>执行记录</span><span id="history-nav-count" class="nav-count">0</span></a>
-        </nav>
-        <div class="sidebar-footer"><a class="external-link" href="https://www.nodeseek.com" target="_blank" rel="noreferrer">{{ icon('globe') }}<span>打开 NodeSeek</span>{{ icon('arrow-up-right') }}</a><div class="sidebar-status"><span id="connection-dot" class="status-dot"></span><span id="connection-label">正在同步</span><small>SELF-HOSTED</small></div></div>
-      </aside>
+      <header class="app-header">
+        <a class="brand" href="#overview"><span class="brand-mark" aria-hidden="true">N<span>↗</span></span><span>NodeSeek<span class="brand-caption">DAILY CONTROL</span></span></a>
+        <nav class="primary-nav" aria-label="工作空间"><a href="#overview" data-view="overview" aria-current="page">{{ icon('layout-dashboard') }}<span>总览</span><small>01</small></a><a href="#account" data-view="account">{{ icon('key-round') }}<span>账号连接</span><small>02</small><i id="account-nav-dot" class="nav-warning" hidden></i></a><a href="#schedule" data-view="schedule">{{ icon('sliders-horizontal') }}<span>自动化</span><small>03</small></a><a href="#history" data-view="history">{{ icon('history') }}<span>执行记录</span><small id="history-nav-count">0</small></a></nav>
+        <div class="header-tools"><span class="connection-indicator"><span id="connection-dot" class="status-dot"></span><span id="connection-label">连接中</span></span><button class="motion-toggle icon-button" type="button" aria-label="暂停动效" data-tooltip="暂停动效">{{ icon('pause') }}</button><button id="logout" type="button" class="icon-button" aria-label="退出登录" data-tooltip="退出登录">{{ icon('log-out') }}</button></div>
+      </header>
       <div class="workspace">
-        <header class="topbar"><div class="breadcrumbs"><span class="desktop-only">工作空间</span>{{ icon('chevron-right', 'desktop-only') }}<strong id="breadcrumb-current">总览</strong></div><div class="topbar-actions"><span class="sync-label"><span class="status-dot"></span><span id="sync-label">连接中</span></span><button id="logout" type="button" class="icon-button" aria-label="退出登录" data-tooltip="退出登录">{{ icon('log-out') }}</button><span class="user-avatar" aria-label="管理员">N</span></div></header>
+        <div class="workspace-strip"><span class="strip-location"><span class="crosshair" aria-hidden="true"></span> PERSONAL SPACE <span>/</span> <strong id="breadcrumb-current">总览</strong></span><span id="sync-label">正在同步</span></div>
         <div class="page-body">
           <div id="connection-banner" class="notice warning" hidden>{{ icon('wifi-off') }}<span>连接暂时中断，正在尝试重新同步。</span><button id="retry" class="text-button" type="button">重试</button></div>
-          <div class="page-heading"><div><p id="page-kicker" class="eyebrow">WORKSPACE OVERVIEW</p><h1 id="page-title" tabindex="-1">签到总览</h1><p id="page-description" class="page-description">正在获取签到状态</p></div><div id="overview-actions" class="heading-actions"><button id="overview-refresh" class="icon-button bordered" type="button" aria-label="刷新总览" data-tooltip="刷新总览">{{ icon('refresh-cw') }}</button><button id="run" type="button" class="button primary" disabled>{{ icon('play') }}<span data-button-label>立即签到</span></button></div></div>
+          <div class="page-heading"><div><p id="page-kicker" class="eyebrow">THE DAILY ORBIT</p><h1 id="page-title" tabindex="-1">NodeSeek<span class="accent-text">.</span></h1><p id="page-description" class="page-description">正在获取签到状态</p></div><div id="overview-actions" class="heading-actions"><span class="live-label"><i></i> LIVE WORKSPACE</span><button id="overview-refresh" class="icon-button bordered" type="button" aria-label="刷新总览" data-tooltip="刷新总览">{{ icon('refresh-cw') }}</button></div></div>
           {% include '_overview.html' %}
           {% include '_account.html' %}
           {% include '_settings.html' %}
           {% include '_history.html' %}
-          <footer class="workspace-footer"><span>NodeSeek Panel <span class="footer-divider">/</span> Your daily routine.</span><span id="footer-timezone">Asia/Shanghai</span></footer>
+          <footer class="workspace-footer"><a href="https://www.nodeseek.com" target="_blank" rel="noreferrer">NODESEEK {{ icon('arrow-up-right') }}</a><span>EVERY DAY. IN MOTION.</span><span id="footer-timezone">Asia/Shanghai</span></footer>
         </div>
       </div>
     </div>
