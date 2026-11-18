@@ -1,0 +1,25 @@
+:root { --muted: #59676f; --line: #dce3e5; }
+.login-shell { width: min(100%, 31rem); min-height: 100svh; padding: 32px 22px; grid-template-columns: minmax(0, 1fr); align-content: center; gap: 22px; }
+.login-intro .brand { margin: 0 0 16px; }
+.login-intro h1 { font-size: 32px; margin: 0; letter-spacing: 0; }
+.login-card { border-radius: 8px; padding: 28px; }
+main { max-width: 1280px; }
+.overview h1 { margin: 0; letter-spacing: 0; }
+.metrics { gap: 0; background: white; border: 1px solid var(--line); border-radius: 8px; }
+.metrics article { min-width: 0; background: none; border: 0; border-radius: 0; }
+.metrics article + article { border-inline-start: 1px solid var(--line); }
+.metrics strong { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.metrics small, .field small, .card-note, .toggle-row p, .history-footer { color: var(--muted); }
+.card { border: 0; border-top: 2px solid var(--line); border-radius: 0; }
+.section-number { color: var(--accent); }
+.table-wrap { max-block-size: 32rem; overflow: auto; }
+.table-wrap table { min-width: 34rem; font-size: 13px; }
+.table-wrap th { position: sticky; top: 0; color: var(--muted); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 760px) {
+  aside nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; margin-top: 12px; }
+  nav a { padding: 8px; }
+  .metric-label, .metrics small { font-size: 11px; }
+  .card { padding-inline: 14px; }
+  .form-footer { flex-wrap: wrap; gap: 10px; }
+}
