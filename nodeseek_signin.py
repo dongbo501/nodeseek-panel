@@ -49,7 +49,7 @@ OPENER = urllib.request.build_opener(NoRedirect())
 
 def safe_message(message, cfg):
     text = str(message)
-    secrets = [cfg.get("cookie", ""), cfg.get("bark_url", "")]
+    secrets = [cfg.get(key, "") for key in ("cookie", "bark_url", "access_token", "refresh_token")]
     secrets += [part.split("=", 1)[-1].strip() for part in cfg.get("cookie", "").split(";") if "=" in part]
     if cfg.get("bark_url"):
         secrets += [p for p in urlsplit(cfg["bark_url"]).path.split("/") if p]
@@ -158,7 +158,7 @@ def send_bark(cfg, title, body):
     bark_url = (cfg.get("bark_url") or "").strip().rstrip("/")
     if not bark_url:
         return
-    payload = json.dumps({"title": title, "body": body, "group": "NodeSeek"}).encode("utf-8")
+    payload = json.dumps({"title": title, "body": body, "group": cfg.get("site_name", "NodeSeek")}).encode("utf-8")
     req = urllib.request.Request(
         bark_url,
         data=payload,
@@ -177,7 +177,7 @@ def notify_check_in(cfg, status, message):
     """按通知设置推送最终签到结果，面板与独立脚本共用。"""
     if cfg.get("bark_only_on_failure", False) and status != "fail":
         return
-    title = {"ok": "NodeSeek 签到成功", "already": "NodeSeek 今日已签到", "fail": "NodeSeek 签到失败"}[status]
+    title = cfg.get("site_name", "NodeSeek") + " " + {"ok": "签到成功", "already": "今日已签到", "fail": "签到失败"}[status]
     send_bark(cfg, title, message)
 
 

@@ -16,7 +16,7 @@ from flask import Flask, jsonify, render_template, request, session, send_from_d
 from flask_sock import Sock
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .config import ConfigStore
+from .config import ConfigStore, SITES
 from .service import Service
 from .browser import BrowserManager
 
@@ -57,12 +57,26 @@ def create_app(data_dir=None, start_scheduler=True, runner=None):
     )
     config = ConfigStore(directory)
     service = Service(directory, config, runner=runner)
+    string_directory = directory / "string"
+    string_directory.mkdir(exist_ok=True, mode=0o700)
+    string_config = ConfigStore(string_directory, site="string")
+    string_service = Service(string_directory, string_config, runner=runner)
+    stores = {"nodeseek": config, "string": string_config}
+    services = {"nodeseek": service, "string": string_service}
     browser = BrowserManager(config, service)
     app.extensions["config_store"] = config
     app.extensions["signin_service"] = service
     app.extensions["browser_manager"] = browser
+    app.extensions["site_configs"] = stores
+    app.extensions["site_services"] = services
     attempts = {}
     auth_lock = threading.Lock()
+
+    def selected_site():
+        site = request.args.get("site", "nodeseek")
+        if site not in SITES:
+            raise ValueError("未知站点")
+        return site
 
     def authenticated():
         return session.get("auth_version") == auth_version
@@ -121,7 +135,7 @@ def create_app(data_dir=None, start_scheduler=True, runner=None):
 
     @app.get("/healthz")
     def health():
-        alive = service.status()["scheduler_alive"] or not start_scheduler
+        alive = not start_scheduler or all(item.status()["scheduler_alive"] for item in services.values())
         return jsonify(status="ok" if alive else "error"), 200 if alive else 503
 
     @app.get("/api/session")
@@ -163,29 +177,30 @@ def create_app(data_dir=None, start_scheduler=True, runner=None):
     @app.get("/api/config")
     @login_required
     def get_config():
-        return jsonify(config.for_admin())
+        return jsonify(stores[selected_site()].for_admin())
 
     @app.put("/api/config")
     @login_required
     def save_config():
-        result = config.update(request.get_json())
-        service.refresh_schedule()
+        site = selected_site()
+        result = stores[site].update(request.get_json())
+        services[site].refresh_schedule()
         return jsonify(result)
 
     @app.get("/api/status")
     @login_required
     def get_status():
-        return jsonify(service.status())
+        return jsonify(services[selected_site()].status())
 
     @app.get("/api/history")
     @login_required
     def history():
-        return jsonify(items=service.history())
+        return jsonify(items=services[selected_site()].history())
 
     @app.post("/api/run")
     @login_required
     def run():
-        if not service.trigger():
+        if not services[selected_site()].trigger():
             return jsonify(error="已有签到任务正在运行"), 409
         return jsonify(message="签到任务已开始，请稍后查看执行记录"), 202
 
@@ -197,9 +212,10 @@ def create_app(data_dir=None, start_scheduler=True, runner=None):
     @app.post("/api/browser/start")
     @login_required
     def browser_start():
-        if os.environ.get("NODESEEK_COOKIE"):
+        site = selected_site()
+        if site == "nodeseek" and os.environ.get("NODESEEK_COOKIE"):
             raise ValueError("请先移除 NODESEEK_COOKIE 环境变量，以便从浏览器导入")
-        return jsonify(browser.start())
+        return jsonify(browser.start(stores[site], services[site]))
 
     @app.post("/api/browser/capture")
     @login_required
@@ -276,7 +292,8 @@ def create_app(data_dir=None, start_scheduler=True, runner=None):
             reader.join(timeout=2)
 
     if start_scheduler:
-        service.start()
-        atexit.register(service.shutdown)
+        for item in services.values():
+            item.start()
+            atexit.register(item.shutdown)
         atexit.register(browser.close)
     return app

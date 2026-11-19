@@ -9,6 +9,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from nodeseek_signin import execute_check_in, notify_check_in, safe_message
+from .config import SITES
+from . import string_signin
 
 log = logging.getLogger("nodeseek")
 
@@ -29,7 +31,8 @@ def next_run(cfg, now=None, rng=random):
 class Service:
     def __init__(self, directory, config, runner=None):
         self.config = config
-        self.runner = runner or execute_check_in
+        self.site = config.site
+        self.runner = runner or (self._string_runner if self.site == "string" else execute_check_in)
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.wake = threading.Event()
@@ -44,10 +47,13 @@ class Service:
                 source TEXT NOT NULL, status TEXT NOT NULL, message TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         """)
-        self.db.execute("UPDATE history SET status='fail', message='容器重启，执行结果未知，请查看 NodeSeek', finished_at=? WHERE status='running'", (utcnow().isoformat(),))
+        self.db.execute("UPDATE history SET status='fail', message=?, finished_at=? WHERE status='running'", (f"容器重启，执行结果未知，请查看 {SITES[self.site]}", utcnow().isoformat()))
         self.db.commit()
         Path(directory, "history.sqlite3").chmod(0o600)
         self.refresh_schedule()
+
+    def _string_runner(self, cfg, stop_event=None):
+        return string_signin.execute_check_in(cfg, stop_event, save_tokens=self.config.rotate_tokens)
 
     def state(self, key):
         row = self.db.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
@@ -60,7 +66,7 @@ class Service:
         with self.lock:
             cfg = self.config.get()
             signature = hashlib.sha256(json.dumps({k: cfg[k] for k in ("run_at", "jitter_minutes", "timezone", "enabled")}, sort_keys=True).encode()).hexdigest()
-            active = cfg["enabled"] and bool(cfg["cookie"])
+            active = cfg["enabled"] and self.config.has_credentials(cfg)
             current = self.state("next_run")
             if not active:
                 current = ""
@@ -87,8 +93,8 @@ class Service:
             if self.busy:
                 return False
             cfg = self.config.get()
-            if not cfg["cookie"]:
-                raise ValueError("请先配置 NodeSeek Cookie")
+            if not self.config.has_credentials(cfg):
+                raise ValueError("请先配置 String 登录 Token" if self.site == "string" else "请先配置 NodeSeek Cookie")
             self.busy = True
             rowid = self.db.execute("INSERT INTO history(started_at,source,status,message) VALUES (?,?,'running','正在签到')", (utcnow().isoformat(), source)).lastrowid
             self.db.commit()
@@ -111,8 +117,11 @@ class Service:
                 self.db.execute("UPDATE history SET status=?, message=?, finished_at=? WHERE id=?", (status, message, utcnow().isoformat(), rowid))
                 self.db.execute("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT 1000)")
                 self.db.commit()
-            log.info("签到 %s: %s", status, message)
-            notify_check_in(cfg, status, message)
+            log.info("%s 签到 %s: %s", SITES[self.site], status, message)
+            if self.site == "string":
+                notify_check_in({**cfg, "site_name": "String"}, status, message)
+            else:
+                notify_check_in(cfg, status, message)
         finally:
             with self.lock:
                 self.busy = False
@@ -123,7 +132,7 @@ class Service:
         with self.lock:
             cfg = self.config.get()
             target = self.state("next_run")
-            if not cfg["enabled"] or not cfg["cookie"] or not target or self.busy:
+            if not cfg["enabled"] or not self.config.has_credentials(cfg) or not target or self.busy:
                 return
             target = datetime.fromisoformat(target)
             if target > now:

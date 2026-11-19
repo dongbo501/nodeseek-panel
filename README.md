@@ -1,9 +1,9 @@
 # NodeSeek Panel
 
-一个容器完成 NodeSeek 每日签到、网页管理和可视化登录。支持手动粘贴 Cookie，或在容器浏览器里亲自登录后自动导入 Cookie 与 User-Agent。
+一个容器完成 NodeSeek 和 String 每日签到、网页管理和可视化登录。在面板顶部选择站点，各自保存登录凭证、签到计划、Bark 设置和执行记录。支持手动填写凭证，或在容器浏览器里亲自登录后自动导入。
 
 - 中文管理面板：密码登录、每日定时、随机延迟、随机/固定奖励、立即签到。
-- 两种登录方式：传统 Cookie 填写；内置 Chromium + noVNC 可视化登录，无需复制 Cookie。
+- 两种登录方式：手动填写 NodeSeek Cookie / String 登录 Token；内置 Chromium + noVNC 可视化登录，自动导入所选站点凭证。
 - Bark 结果通知，可选仅在签到失败时发送；最近 100 条可见记录，最多保留 1,000 条。
 - `/data` 持久化配置、任务计划、执行记录和登录密钥；重启不丢配置。
 - 一个容器、一个对外端口 `8080`，不需要 Redis、数据库容器或独立浏览器服务。
@@ -70,6 +70,8 @@ docker logs nodeseek-panel
 
 ## 配置账号：两种方式
 
+下列步骤用于 NodeSeek；String 请参见后面的 **String 普通签到**。旧版 NodeSeek 配置和 API 默认行为保持兼容。
+
 ### 方式一：从已有浏览器复制 Cookie
 
 1. 在自己的浏览器中登录 [NodeSeek](https://www.nodeseek.com)。
@@ -93,6 +95,22 @@ docker logs nodeseek-panel
 密码用于容器浏览器里的站点登录。使用临时粘贴框或快捷键时，文本经已登录验证和 CSRF 保护的接口转发到当前网页输入框，不写入配置、数据库或日志；发送后清空临时输入框。浏览器禁用密码保存。远程画面与控制通过经过管理登录验证的 WebSocket 传输，VNC 和浏览器调试端口不对外发布。
 
 **登录后抓到 Cookie 不等于网站一定接受签到请求。** Cloudflare 可能把验证绑定到出口 IP、浏览器或 TLS 特征；本项目使用 Python 发起签到请求，不承诺绕过站点防护。出现 403 时可在容器浏览器重新登录并验证，仍失败则检查出口网络或站点策略。不要关闭证书验证。
+
+## String 普通签到
+
+1. 在面板顶部 **签到站点** 选择 **String**。
+2. 选择 **容器浏览器登录** 并打开浏览器，亲自完成 String 登录。检测到 `https://www.string.ink` 的 `auth_token` 和 `refresh_token` 后，自动导入并关闭临时浏览器。只读取这个精确来源的两个 String 凭证，不导入 Google 的登录凭证。
+3. 如果容器内无法完成 Google 等登录方式，可在自己的浏览器登录 [String 控制台](https://www.string.ink/dashboard)，打开开发者工具 → **Application / 应用 → Local Storage / 本地存储 → https://www.string.ink**，把同一会话的 `auth_token` 和 `refresh_token` 分别填入面板的 **String 登录 Token** 和 **刷新 Token**。不要填模型调用用的 API Key，也不要带 `Bearer ` 前缀。
+4. 保存后点击 **立即签到**。如果当天已经签过，执行记录会显示「今日已签到」和当天积分；否则提交普通签到并再次查询状态确认结果。
+5. 在 String 的 **计划与通知** 中设置时间和 Bark 地址。NodeSeek 和 String 分别调度；只有一个容器登录浏览器，可按顺序为两个站点登录。
+
+String 使用网站内部接口 `GET /api/v1/user/checkin` 查询状态、`POST /api/v1/user/checkin` 普通签到，以及 `POST /api/v1/auth/refresh` 续期。这是 String 自身的登录机制，不限于 Google 登录。登录 Token 失效时尝试刷新，先将轮换后的两个凭证保存，再继续请求。刷新凭证失效时需要重新登录；建议使用容器的独立登录会话，避免手动复制的刷新凭证被原浏览器同时轮换。
+
+更换登录 Token 时请同时填写匹配的刷新 Token；若未提供新的刷新 Token，会清除旧值，避免续期到旧账号。两个输入均留空表示保留当前值，勾选清除选项才会一并删除。凭证以 `0600` 权限保存在 `/data/string/config.json`；String 的记录与计划保存在 `/data/string/history.sqlite3`。备份整个 `/data` 即可包含两个站点。
+
+![String 配置界面](docs/string-panel-preview.jpg)
+
+签到日期与奖励以网站返回的 UTC+8 状态为准，面板时区仅控制任务时间和显示。**签到 Plus** 由网站按用量自动发放；累计签到奖励券只在结果中提示，需到网站手动开启。内部接口可能变化，适配不保证长期兼容。分析依据和验证边界见 [String 接口分析](docs/STRING.md)。原 `nodeseek_signin.py` 独立脚本仍只处理 NodeSeek，String 通过面板服务运行。
 
 ## 计划、执行与通知
 
@@ -169,10 +187,10 @@ python -m unittest discover -s tests -v
 
 ## 数据与边界
 
-- 单管理员、单 NodeSeek 账号，按自己的需要部署多个容器即可管理多个账号。
+- 单管理员，每个站点一个账号；NodeSeek 与 String 可以同时启用。更多同站点账号可部署多个容器。
 - 仅开放 `8080`；以 UID/GID `10001` 非 root 用户运行。不要增加 worker 数量，否则会重复调度。
-- Cookie、Bark 密钥以文件方式保存在 `/data/config.json`（权限 `0600`），不是加密存储。保护数据卷和备份文件；已登录管理员可在面板查看完整 Cookie、User-Agent 和 Bark 地址，未登录无法读取配置。配置响应禁止缓存，退出登录后清空页面中的配置值，执行消息仍会做脱敏。
+- NodeSeek Cookie、Bark 密钥保存在 `/data/config.json`，String 登录 Token、刷新 Token 和 Bark 配置保存在 `/data/string/config.json`（均为权限 `0600`），不是加密存储。保护数据卷和备份文件；已登录管理员可在面板查看完整凭证，未登录无法读取配置。配置响应禁止缓存，退出登录后清空页面中的配置值，执行消息仍会做脱敏。
 - 面板包含密码哈希、HttpOnly / SameSite 会话、CSRF 验证、登录频率限制。公网使用 HTTPS，并设置 `COOKIE_SECURE=true`。
-- Chromium 使用容器内非 root 模式和 `--no-sandbox`；容器保留 Docker 默认隔离，Compose 移除额外能力并启用 `no-new-privileges`。可视化浏览器仅用于你信任的 NodeSeek 登录，不用作通用共享浏览器。
+- Chromium 使用容器内非 root 模式和 `--no-sandbox`；容器保留 Docker 默认隔离，Compose 移除额外能力并启用 `no-new-privileges`。可视化浏览器仅用于所选站点的登录，不用作通用共享浏览器。
 - Cookie/浏览器临时文件、`.env`、数据库和日志通过 `.gitignore` 排除；Docker 构建采用允许列表，只复制程序和依赖文件。
 - 与 NodeSeek 官方无关联。请遵守站点规则，勿用于批量账号或滥用。

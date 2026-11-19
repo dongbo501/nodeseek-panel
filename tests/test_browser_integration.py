@@ -1,5 +1,6 @@
 """完整镜像中的真实浏览器测试；不连接 NodeSeek，也不使用真实账号。"""
 import json
+import base64
 import os
 import subprocess
 import tempfile
@@ -18,6 +19,65 @@ from panel.service import Service
 
 @unittest.skipUnless(os.environ.get('RUN_BROWSER_TESTS') == '1', '仅在完整 Docker 镜像中运行')
 class BrowserIntegrationTests(unittest.TestCase):
+    def test_string_local_storage_capture_and_cleanup(self):
+        """拦截导航，用离线 String 来源页面验证真实 Chromium 的 localStorage 导入。"""
+        with tempfile.TemporaryDirectory() as directory:
+            config = ConfigStore(directory, site='string')
+            config.update({'enabled': False})
+            service = Service(directory, config)
+            browser = BrowserManager(config, service)
+            original_popen = subprocess.Popen
+
+            def launch(command, **kwargs):
+                if command[0] == 'chromium':
+                    command = command[:-1] + ['--app=data:text/html,<title>Offline String fixture</title>']
+                return original_popen(command, **kwargs)
+
+            try:
+                with patch('panel.browser.subprocess.Popen', side_effect=launch):
+                    browser.start()
+                processes, profile = list(browser.processes), browser.profile
+                deadline = time.monotonic() + 20
+                while not browser.status()['ready'] and time.monotonic() < deadline:
+                    time.sleep(.2)
+                self.assertTrue(browser.status()['ready'])
+                self.assertFalse(config.get()['access_token'])
+                with urllib.request.urlopen('http://127.0.0.1:9222/json/list', timeout=3) as response:
+                    page = next(p for p in json.load(response) if p['type'] == 'page')
+                ws = websocket.create_connection(page['webSocketDebuggerUrl'], timeout=10, suppress_origin=True)
+                try:
+                    browser._command(ws, 10, 'Fetch.enable', {'patterns': [{'urlPattern': 'https://www.string.ink/*'}]})
+                    ws.send(json.dumps({'id': 11, 'method': 'Page.navigate', 'params': {'url': 'https://www.string.ink/dashboard'}}))
+                    while True:
+                        event = json.loads(ws.recv())
+                        if event.get('method') == 'Fetch.requestPaused':
+                            html = '''<title>Offline String login</title><script>
+                                localStorage.setItem('auth_token', 'fixture-string-access');
+                                localStorage.setItem('refresh_token', 'fixture-string-refresh');
+                                localStorage.setItem('other-private-data', 'must-not-import');
+                            </script><p>Fixture login complete</p>'''
+                            browser._command(ws, 12, 'Fetch.fulfillRequest', {
+                                'requestId': event['params']['requestId'], 'responseCode': 200,
+                                'responseHeaders': [{'name': 'Content-Type', 'value': 'text/html; charset=utf-8'}],
+                                'body': base64.b64encode(html.encode()).decode(),
+                            })
+                            break
+                finally:
+                    ws.close()
+                deadline = time.monotonic() + 20
+                while not browser.status()['imported_at'] and time.monotonic() < deadline:
+                    time.sleep(.2)
+                self.assertTrue(browser.status()['imported_at'])
+                self.assertEqual(config.get()['access_token'], 'fixture-string-access')
+                self.assertEqual(config.get()['refresh_token'], 'fixture-string-refresh')
+                self.assertNotIn('must-not-import', config.path.read_text())
+                self.assertIn('Chrome/', config.get()['user_agent'])
+                self.assertFalse(browser.status()['running'])
+                self.assertFalse(Path(profile).exists())
+                self.assertTrue(all(p.poll() is not None for p in processes))
+            finally:
+                browser.close(); service.shutdown(); service.db.close()
+
     def test_real_chromium_paste_cookie_capture_and_cleanup(self):
         with tempfile.TemporaryDirectory() as directory:
             config = ConfigStore(directory)

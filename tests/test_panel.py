@@ -32,8 +32,9 @@ class PanelTests(unittest.TestCase):
         self.csrf = self.client.get('/api/session').json['csrf']
 
     def tearDown(self):
-        self.service.shutdown()
-        self.service.db.close()
+        for service in self.app.extensions['site_services'].values():
+            service.shutdown()
+            service.db.close()
         self.cookie_env.stop()
         self.env.stop()
         self.temp.cleanup()

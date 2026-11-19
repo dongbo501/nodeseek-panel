@@ -14,7 +14,8 @@ DEFAULTS = {
     "user_agent": DEFAULT_UA, "bark_url": "", "bark_only_on_failure": False, "enabled": True,
     "timezone": "Asia/Shanghai",
 }
-SECRETS = ("cookie", "bark_url")
+SECRETS = ("cookie", "bark_url", "access_token", "refresh_token")
+SITES = {"nodeseek": "NodeSeek", "string": "String"}
 
 
 def validate(cfg):
@@ -44,6 +45,14 @@ def validate(cfg):
         raise ValueError("配置字段过长")
     if not cfg["user_agent"]:
         raise ValueError("User-Agent 不可为空")
+    for key in ("access_token", "refresh_token"):
+        if key not in cfg:
+            continue
+        if not isinstance(cfg[key], str):
+            raise ValueError(f"{key} 必须为字符串")
+        cfg[key] = cfg[key].strip()
+        if len(cfg[key]) > 16384 or any(ord(c) < 33 or ord(c) > 126 for c in cfg[key]):
+            raise ValueError(f"{key} 过长或含无效字符，请仅填写 Token 值")
     if cfg["bark_url"]:
         url = urlsplit(cfg["bark_url"])
         if url.scheme != "https" or not url.hostname or url.username or url.password or url.fragment:
@@ -52,13 +61,20 @@ def validate(cfg):
 
 
 class ConfigStore:
-    def __init__(self, directory):
+    def __init__(self, directory, site="nodeseek"):
+        if site not in SITES:
+            raise ValueError("未知站点")
+        self.site = site
+        self.defaults = dict(DEFAULTS)
+        if site == "string":
+            self.defaults.update(access_token="", refresh_token="")
+        self.secrets = tuple(key for key in SECRETS if key in self.defaults)
         self.path = Path(directory) / "config.json"
         self.lock = threading.RLock()
         loaded = json.loads(self.path.read_text()) if self.path.exists() else {}
         if not isinstance(loaded, dict):
             raise ValueError("config.json 必须是 JSON 对象")
-        self.cfg = validate({**DEFAULTS, **{k: v for k, v in loaded.items() if k in DEFAULTS}})
+        self.cfg = validate({**self.defaults, **{k: v for k, v in loaded.items() if k in self.defaults}})
         with self.lock:
             self._write(self.cfg)
 
@@ -75,30 +91,46 @@ class ConfigStore:
     def get(self):
         with self.lock:
             cfg = dict(self.cfg)
-            if os.environ.get("NODESEEK_COOKIE"):
+            if self.site == "nodeseek" and os.environ.get("NODESEEK_COOKIE"):
                 cfg["cookie"] = os.environ["NODESEEK_COOKIE"].strip()
             return validate(cfg)
 
     def for_admin(self):
         """当前生效的完整配置；仅供通过管理员验证的接口返回。"""
         cfg = self.get()
-        for key in SECRETS:
+        for key in self.secrets:
             cfg[key + "_configured"] = bool(cfg[key])
-        cfg["cookie_from_env"] = bool(os.environ.get("NODESEEK_COOKIE"))
+        cfg["cookie_from_env"] = self.site == "nodeseek" and bool(os.environ.get("NODESEEK_COOKIE"))
+        cfg["site"] = self.site
+        cfg["credential_configured"] = self.has_credentials(cfg)
         return cfg
+
+    def has_credentials(self, cfg):
+        return bool(cfg.get("access_token" if self.site == "string" else "cookie"))
+
+    def rotate_tokens(self, tokens, expected):
+        with self.lock:
+            if any(self.cfg.get(key) != value for key, value in expected.items()):
+                return False
+            self.update(tokens)
+            return True
 
     def update(self, changes):
         if not isinstance(changes, dict):
             raise ValueError("请求必须是 JSON 对象")
-        unknown = set(changes) - set(DEFAULTS) - {"clear_cookie", "clear_bark_url"}
+        unknown = set(changes) - set(self.defaults) - {"clear_" + key for key in self.secrets}
         if unknown:
             raise ValueError("存在未知配置字段")
         with self.lock:
             cfg = dict(self.cfg)
+            if (self.site == "string" and changes.get("access_token")
+                    and changes["access_token"] != cfg["access_token"] and not changes.get("refresh_token")):
+                # 更换账号时不能沿用旧账号的刷新令牌。
+                cfg["refresh_token"] = ""
             for key, value in changes.items():
-                if key in DEFAULTS and (key not in SECRETS or value != ""):
+                if key in self.defaults and (key not in self.secrets or value != ""):
                     cfg[key] = value
-            for key in SECRETS:
+            for key in self.secrets:
                 clear = changes.get("clear_" + key, False)
                 if type(clear) is not bool:
                     raise ValueError("清除标记必须为布尔值")

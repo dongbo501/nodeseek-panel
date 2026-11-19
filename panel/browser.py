@@ -1,4 +1,4 @@
-"""按需启动可视化 Chromium，在用户手工登录后导入 NodeSeek Cookie。"""
+"""按需启动可视化 Chromium，在用户手工登录后导入站点凭证。"""
 import json
 import logging
 import os
@@ -10,8 +10,10 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import websocket
+from .config import SITES
 
 log = logging.getLogger("nodeseek")
 
@@ -43,18 +45,22 @@ class BrowserManager:
     def status(self):
         with self.lock:
             running = bool(self.processes) and all(p.poll() is None for p in self.processes)
-            return {"running": running, "ready": self.ready and running, "message": self.message,
+            return {"site": self.config.site, "running": running, "ready": self.ready and running, "message": self.message,
                     "imported_at": self.imported_at, "remaining_seconds": max(0, int(self.deadline - time.monotonic())) if running else 0}
 
-    def start(self):
+    def start(self, config=None, service=None):
         with self.lock:
             if self.status()["running"]:
+                if config is not None and config.site != self.config.site:
+                    raise ValueError("另一个站点的登录浏览器正在运行，请先关闭")
                 return self.status()
             for binary in ("Xvfb", "chromium", "x11vnc"):
                 if not shutil.which(binary):
                     raise ValueError("容器浏览器未安装，请使用完整 Docker 镜像")
             self._cleanup()
-            self.profile = tempfile.mkdtemp(prefix="nodeseek-browser-")
+            if config is not None:
+                self.config, self.service = config, service
+            self.profile = tempfile.mkdtemp(prefix=self.config.site + "-browser-")
             default = Path(self.profile, "Default")
             default.mkdir()
             (default / "Preferences").write_text(json.dumps({"credentials_enable_service": False, "profile": {"password_manager_enabled": False}}))
@@ -64,9 +70,10 @@ class BrowserManager:
             # 不把管理密码或 NodeSeek Cookie 传入浏览器子进程。
             for key in ("ADMIN_PASSWORD", "NODESEEK_COOKIE"):
                 env.pop(key, None)
+            login_url = "https://www.string.ink/dashboard" if self.config.site == "string" else "https://www.nodeseek.com/"
             commands = [
                 ["Xvfb", ":99", "-screen", "0", "1280x800x24", "-nolisten", "tcp", "-ac"],
-                ["chromium", "--no-sandbox", "--disable-dev-shm-usage", "--no-first-run", "--no-default-browser-check", "--disable-sync", "--disable-background-networking", "--disable-extensions", "--disable-breakpad", "--disable-crash-reporter", "--password-store=basic", "--remote-debugging-port=9222", "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + self.profile, "--window-size=1280,800", "--start-maximized", "--app=https://www.nodeseek.com/"],
+                ["chromium", "--no-sandbox", "--disable-dev-shm-usage", "--no-first-run", "--no-default-browser-check", "--disable-sync", "--disable-background-networking", "--disable-extensions", "--disable-breakpad", "--disable-crash-reporter", "--password-store=basic", "--remote-debugging-port=9222", "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + self.profile, "--window-size=1280,800", "--start-maximized", "--app=" + login_url],
                 ["x11vnc", "-display", ":99", "-localhost", "-rfbport", "5900", "-forever", "-shared", "-nopw", "-quiet"],
             ]
             self.generation += 1
@@ -91,6 +98,8 @@ class BrowserManager:
     def _cdp(self):
         with urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=3) as r:
             info = json.load(r)
+        if self.config.site == "string":
+            return self._string_tokens(), info["User-Agent"]
         ws = websocket.create_connection(info["webSocketDebuggerUrl"], timeout=3, suppress_origin=True)
         try:
             ws.send(json.dumps({"id": 1, "method": "Storage.getCookies"}))
@@ -102,6 +111,32 @@ class BrowserManager:
                     return extract_cookie(result["result"]["cookies"]), info["User-Agent"]
         finally:
             ws.close()
+
+    def _string_tokens(self):
+        with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=3) as response:
+            pages = json.load(response)
+        for page in pages:
+            url = urlsplit(page.get("url", ""))
+            if page.get("type") != "page" or url.scheme != "https" or url.netloc != "www.string.ink":
+                continue
+            ws = websocket.create_connection(page["webSocketDebuggerUrl"], timeout=3, suppress_origin=True)
+            try:
+                result = self._command(ws, 1, "Runtime.evaluate", {
+                    "expression": """(() => {
+                        if (location.origin !== 'https://www.string.ink') return null;
+                        const access_token = localStorage.getItem('auth_token');
+                        const refresh_token = localStorage.getItem('refresh_token');
+                        return access_token && refresh_token ? {access_token, refresh_token} : null;
+                    })()""",
+                    "returnByValue": True,
+                })
+                tokens = result.get("result", {}).get("value")
+                if isinstance(tokens, dict) and all(isinstance(tokens.get(key), str) and tokens[key]
+                                                    for key in ("access_token", "refresh_token")):
+                    return {key: tokens[key] for key in ("access_token", "refresh_token")}
+            finally:
+                ws.close()
+        return None
 
     @staticmethod
     def _command(ws, command_id, method, params=None):
@@ -155,7 +190,7 @@ class BrowserManager:
         with self.lock:
             if not self.status()["running"]:
                 raise ValueError("请先打开容器浏览器")
-            if os.environ.get("NODESEEK_COOKIE"):
+            if self.config.site == "nodeseek" and os.environ.get("NODESEEK_COOKIE"):
                 raise ValueError("NODESEEK_COOKIE 环境变量正在覆盖配置，请移除此变量后重新部署")
             try:
                 cookie, ua = self._cdp()
@@ -163,12 +198,13 @@ class BrowserManager:
                 raise ValueError("浏览器尚未准备好，请稍后重试") from None
             if not cookie:
                 raise ValueError("尚未检测到登录会话，请先在下方浏览器中完成登录")
-            self.config.update({"cookie": cookie, "user_agent": ua})
+            credentials = cookie if self.config.site == "string" else {"cookie": cookie}
+            self.config.update({**credentials, "user_agent": ua})
             self.service.refresh_schedule()
             from .service import utcnow
             self.imported_at = utcnow().isoformat()
-            self.message = "已自动导入登录 Cookie 和 User-Agent，可立即签到验证"
-            log.info("已从容器浏览器导入 NodeSeek Cookie")
+            self.message = "已自动导入登录凭证和 User-Agent，可立即签到验证"
+            log.info("已从容器浏览器导入 %s 登录凭证", SITES[self.config.site])
             self._cleanup()
             return self.status()
 

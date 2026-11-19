@@ -13,7 +13,7 @@ COPY --chown=app:app panel ./panel
 ARG SOURCE_URL=https://github.com/dongbo501/nodeseek-panel
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="NodeSeek Panel" \
-      org.opencontainers.image.description="NodeSeek 签到管理面板，支持手动 Cookie 和容器浏览器登录" \
+      org.opencontainers.image.description="NodeSeek / String 签到管理面板，支持凭证填写和容器浏览器登录" \
       org.opencontainers.image.source=$SOURCE_URL \
       org.opencontainers.image.revision=$REVISION
 USER 10001:10001
