@@ -4,8 +4,11 @@ let running = false, browserRunning = false;
 let csrf = '', config = null, active = false, polling = false, lastImport = null, timer;
 let selectedSite = 'nodeseek', actions = 0;
 const siteNames = {nodeseek: 'NodeSeek', string: 'String'};
+const siteButtons = [...document.querySelectorAll('.site-option')];
 const configured = () => Boolean(config?.credential_configured);
 const labels = {ok: '签到成功', already: '今日已签到', fail: '执行失败', running: '正在执行'};
+function setSiteButtonsDisabled(disabled) { for (const button of siteButtons) button.disabled = disabled; }
+function selectSiteButton(site) { for (const button of siteButtons) { const selected = button.dataset.site === site; button.classList.toggle('selected', selected); button.setAttribute('aria-pressed', String(selected)); } }
 function toast(message, error = false) { const el = $('toast'); el.textContent = message; el.classList.toggle('error', error); el.hidden = false; clearTimeout(timer); timer = setTimeout(() => el.hidden = true, 6000); }
 async function api(path, method = 'GET', body) {
   const r = await fetch('/api/' + path + '?site=' + encodeURIComponent(selectedSite), {method, headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf}, ...(body !== undefined ? {body: JSON.stringify(body)} : {})});
@@ -73,7 +76,7 @@ async function renderBrowser(b) {
 }
 async function refresh() { if (!active || polling) return; polling = true; const site = selectedSite; try { const [s,h,b] = await Promise.all([api('status'),api('history'),api('browser')]); if (!active || site !== selectedSite) return; renderStatus(s); renderHistory(h.items); await renderBrowser(b); } finally { polling = false; if (active && site !== selectedSite) void refresh().catch(e => toast(e.message, true)); } }
 async function enter() { fillConfig(await api('config')); active = true; $('login').hidden = true; $('dashboard').hidden = false; await refresh(); }
-function action(id, fn, event = 'click') { $(id).addEventListener(event, async e => { e.preventDefault(); const button = e.currentTarget.tagName === 'FORM' ? e.currentTarget.querySelector('button[type=submit]') : e.currentTarget; button.disabled = true; actions++; $('site').disabled = true; try { await fn(); } catch (e) { toast(e.message, true); } finally { actions--; $('site').disabled = actions > 0; button.disabled = id === 'run' ? running || !configured() : id === 'browser-start' ? browserRunning || config?.cookie_from_env : false; } }); }
+function action(id, fn, event = 'click') { $(id).addEventListener(event, async e => { e.preventDefault(); const button = e.currentTarget.tagName === 'FORM' ? e.currentTarget.querySelector('button[type=submit]') : e.currentTarget; button.disabled = true; actions++; setSiteButtonsDisabled(true); try { await fn(); } catch (e) { toast(e.message, true); } finally { actions--; setSiteButtonsDisabled(actions > 0); button.disabled = id === 'run' ? running || !configured() : id === 'browser-start' ? browserRunning || config?.cookie_from_env : false; } }); }
 action('login-form', async () => { const s = await api('session'); csrf = s.csrf; const r = await api('login', 'POST', {password: $('password').value}); csrf = r.csrf; $('password').value = ''; await enter(); }, 'submit');
 action('logout', async () => { await api('logout', 'POST', {}); showLogin(); });
 action('cookie-form', async () => {
@@ -90,12 +93,13 @@ action('browser-capture', async () => { await renderBrowser(await api('browser/c
 action('browser-stop', async () => { await renderBrowser(await api('browser/stop','POST',{})); });
 function showAccountMode(mode) { for (const tab of ['manual','browser']) { $(tab+'-pane').hidden = tab !== mode; $(tab+'-tab').classList.toggle('selected',tab === mode); $(tab+'-tab').setAttribute('aria-selected',String(tab === mode)); } }
 for (const mode of ['manual', 'browser']) $(mode+'-tab').addEventListener('click', () => showAccountMode(mode));
-$('site').addEventListener('change', async () => {
-  selectedSite = $('site').value; active = false; config = null; lastImport = null;
+for (const button of siteButtons) button.addEventListener('click', async () => {
+  if (button.dataset.site === selectedSite || actions > 0) return;
+  selectedSite = button.dataset.site; selectSiteButton(selectedSite); active = false; config = null; lastImport = null;
   clearCredentials(); $('browser-frame').removeAttribute('src'); $('browser-frame-wrap').hidden = true;
-  $('run').disabled = true; $('site').disabled = true; renderHistory([]); showAccountMode('manual');
+  $('run').disabled = true; setSiteButtonsDisabled(true); renderHistory([]); showAccountMode('manual');
   for (const id of ['schedule-status', 'next-run', 'last-status']) $(id).textContent = '—';
-  try { await enter(); } catch (e) { toast(e.message, true); } finally { $('site').disabled = actions > 0; }
+  try { await enter(); } catch (e) { toast(e.message, true); } finally { setSiteButtonsDisabled(actions > 0); }
 });
 (async () => { try { const s = await api('session'); csrf = s.csrf; if (s.authenticated) await enter(); else showLogin(); } catch(e) { showLogin(); toast(e.message,true); } })();
 setInterval(() => refresh().catch(e => { if(active) toast(e.message,true); }),5000);
