@@ -15,7 +15,8 @@ DEFAULTS = {
     "timezone": "Asia/Shanghai",
 }
 SECRETS = ("cookie", "bark_url", "access_token", "refresh_token")
-SITES = {"nodeseek": "NodeSeek", "string": "String"}
+SITES = {"nodeseek": "NodeSeek", "string": "String", "xingchi": "星驰 API"}
+TOKEN_ORIGINS = {"string": "https://www.string.ink", "xingchi": "https://xingchiapi.com"}
 
 
 def validate(cfg):
@@ -66,7 +67,7 @@ class ConfigStore:
             raise ValueError("未知站点")
         self.site = site
         self.defaults = dict(DEFAULTS)
-        if site == "string":
+        if site in TOKEN_ORIGINS:
             self.defaults.update(access_token="", refresh_token="")
         self.secrets = tuple(key for key in SECRETS if key in self.defaults)
         self.path = Path(directory) / "config.json"
@@ -106,7 +107,7 @@ class ConfigStore:
         return cfg
 
     def has_credentials(self, cfg):
-        return bool(cfg.get("access_token" if self.site == "string" else "cookie"))
+        return bool(cfg.get("access_token" if self.site in TOKEN_ORIGINS else "cookie"))
 
     def rotate_tokens(self, tokens, expected):
         with self.lock:
@@ -123,7 +124,7 @@ class ConfigStore:
             raise ValueError("存在未知配置字段")
         with self.lock:
             cfg = dict(self.cfg)
-            if (self.site == "string" and changes.get("access_token")
+            if (self.site in TOKEN_ORIGINS and changes.get("access_token")
                     and changes["access_token"] != cfg["access_token"] and not changes.get("refresh_token")):
                 # 更换账号时不能沿用旧账号的刷新令牌。
                 cfg["refresh_token"] = ""

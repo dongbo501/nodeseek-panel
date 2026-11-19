@@ -55,14 +55,13 @@ def create_app(data_dir=None, start_scheduler=True, runner=None):
         SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     )
-    config = ConfigStore(directory)
-    service = Service(directory, config, runner=runner)
-    string_directory = directory / "string"
-    string_directory.mkdir(exist_ok=True, mode=0o700)
-    string_config = ConfigStore(string_directory, site="string")
-    string_service = Service(string_directory, string_config, runner=runner)
-    stores = {"nodeseek": config, "string": string_config}
-    services = {"nodeseek": service, "string": string_service}
+    stores, services = {}, {}
+    for site in SITES:
+        site_dir = directory if site == "nodeseek" else directory / site
+        site_dir.mkdir(exist_ok=True, mode=0o700)
+        stores[site] = ConfigStore(site_dir, site=site)
+        services[site] = Service(site_dir, stores[site], runner=runner)
+    config, service = stores["nodeseek"], services["nodeseek"]
     browser = BrowserManager(config, service)
     app.extensions["config_store"] = config
     app.extensions["signin_service"] = service

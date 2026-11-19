@@ -3,7 +3,18 @@ const $ = id => document.getElementById(id);
 let running = false, browserRunning = false;
 let csrf = '', config = null, active = false, polling = false, lastImport = null, timer;
 let selectedSite = 'nodeseek', actions = 0;
-const siteNames = {nodeseek: 'NodeSeek', string: 'String'};
+const siteNames = {nodeseek: 'NodeSeek', string: 'String', xingchi: '星驰 API'};
+const tokenOrigins = {string: 'https://www.string.ink', xingchi: 'https://xingchiapi.com'};
+const siteDescriptions = {
+  nodeseek: '管理你的 NodeSeek 每日签到，把时间留给发现。',
+  string: '管理 String 普通签到；按网站 UTC+8 日期判断，今日已签到会自动跳过。',
+  xingchi: '领取星驰控制台的每日签到额度，今日已领取时自动跳过。'
+};
+const accountDescriptions = {
+  nodeseek: '已有 Cookie 可直接填写，也可以在容器内登录后自动导入。',
+  string: '导入同一登录会话的两个 Token，支持自动续期。签到 Plus 由网站根据用量自动发放，奖励券请到网站手动开启。',
+  xingchi: '在容器浏览器用邮箱和密码登录星驰，完成网页验证后自动导入登录凭证。也可手动填写同一会话的两个 Token。'
+};
 const siteButtons = [...document.querySelectorAll('.site-option')];
 const configured = () => Boolean(config?.credential_configured);
 const labels = {ok: '签到成功', already: '今日已签到', fail: '执行失败', running: '正在执行'};
@@ -24,12 +35,15 @@ function fillConfig(c) {
   $('enabled').checked = c.enabled; $('random').checked = c.random; $('user-agent').value = c.user_agent;
   $('cookie').value = c.cookie; $('bark').value = c.bark_url; $('clear-cookie').checked = false; $('clear-bark').checked = false;
   $('bark-only-on-failure').checked = c.bark_only_on_failure;
-  const isString = selectedSite === 'string';
+  const origin = tokenOrigins[selectedSite];
+  const usesTokens = Boolean(origin);
+  $('access-token-label').textContent = siteNames[selectedSite] + ' 登录 Token';
+  $('access-token-help').textContent = origin ? `在已登录的浏览器中打开开发者工具 → Application → Local Storage → ${origin}，复制 auth_token。` : '';
   $('access-token').value = c.access_token || ''; $('refresh-token').value = c.refresh_token || ''; $('clear-tokens').checked = false;
-  $('cookie-field').hidden = isString; $('clear-cookie-label').hidden = isString; $('string-fields').hidden = !isString; $('random-row').hidden = isString;
-  $('site-description').textContent = isString ? '管理 String 普通签到；按网站 UTC+8 日期判断，今日已签到会自动跳过。' : '管理你的 NodeSeek 每日签到，把时间留给发现。';
-  $('account-description').textContent = isString ? '导入同一登录会话的两个 Token，支持自动续期。签到 Plus 由网站根据用量自动发放，奖励券请到网站手动开启。' : '已有 Cookie 可直接填写，也可以在容器内登录后自动导入。';
-  $('browser-guide-text').textContent = `打开浏览器 → 手工登录 ${siteNames[selectedSite]} → 自动导入${isString ? '两个登录 Token' : ' Cookie'}。验证码由你完成，检测到登录会话后浏览器自动关闭。`;
+  $('cookie-field').hidden = usesTokens; $('clear-cookie-label').hidden = usesTokens; $('token-fields').hidden = !usesTokens; $('random-row').hidden = usesTokens;
+  $('site-description').textContent = siteDescriptions[selectedSite];
+  $('account-description').textContent = accountDescriptions[selectedSite];
+  $('browser-guide-text').textContent = `打开浏览器 → 手工登录 ${siteNames[selectedSite]} → 自动导入${usesTokens ? '两个登录 Token' : ' Cookie'}。验证码由你完成，检测到登录会话后浏览器自动关闭。`;
   $('browser-frame').title = `${siteNames[selectedSite]} 容器登录浏览器`;
   $('cookie-status').textContent = c.cookie_from_env ? '环境变量配置' : configured() ? '登录凭证已配置' : '待配置登录凭证';
   $('cookie-status').className = 'badge' + (configured() ? ' ok' : '');
@@ -80,7 +94,7 @@ function action(id, fn, event = 'click') { $(id).addEventListener(event, async e
 action('login-form', async () => { const s = await api('session'); csrf = s.csrf; const r = await api('login', 'POST', {password: $('password').value}); csrf = r.csrf; $('password').value = ''; await enter(); }, 'submit');
 action('logout', async () => { await api('logout', 'POST', {}); showLogin(); });
 action('cookie-form', async () => {
-  const credentials = selectedSite === 'string' ? {access_token: $('access-token').value, refresh_token: $('refresh-token').value, clear_access_token: $('clear-tokens').checked, clear_refresh_token: $('clear-tokens').checked} : {cookie: $('cookie').value, clear_cookie: $('clear-cookie').checked};
+  const credentials = tokenOrigins[selectedSite] ? {access_token: $('access-token').value, refresh_token: $('refresh-token').value, clear_access_token: $('clear-tokens').checked, clear_refresh_token: $('clear-tokens').checked} : {cookie: $('cookie').value, clear_cookie: $('clear-cookie').checked};
   // 不回写未编辑的 Token，避免覆盖后台刚轮换的登录凭证。
   for (const key of ['access_token', 'refresh_token']) if (credentials[key] === config?.[key]) delete credentials[key];
   fillConfig(await api('config', 'PUT', {...credentials, user_agent: $('user-agent').value})); toast('登录配置已保存'); await refresh();

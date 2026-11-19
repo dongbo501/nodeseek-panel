@@ -11,13 +11,14 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from nodeseek_signin import safe_message
-from panel import string_signin as api
+from panel import token_signin as api
 from panel.browser import BrowserManager
 from panel.config import ConfigStore
 from panel.service import Service
 from panel.web import create_app
 
 CFG = {"access_token": "fixture-access", "refresh_token": "fixture-refresh", "user_agent": "Test browser"}
+STRING_CFG = {**CFG, "site": "string"}
 STATUS = {"day": "2026-11-19", "rules": {"basic": {"enabled": True}},
           "basic": {"today": 0, "progress": 0, "days": 7}, "tickets": []}
 
@@ -38,7 +39,7 @@ def response(data, code=200):
 class StringRequestTests(unittest.TestCase):
     def test_request_matches_frontend_and_never_sends_nodeseek_cookie(self):
         with patch.object(api.OPENER, "open", return_value=response({"code": 0, "data": status(2)})) as send:
-            result = api.request({**CFG, "cookie": "session=private-node"}, "/user/checkin")
+            result = api.request({**STRING_CFG, "cookie": "session=private-node"}, "/user/checkin")
         req = send.call_args.args[0]
         self.assertEqual(req.full_url, "https://www.string.ink/api/v1/user/checkin")
         self.assertEqual(req.get_header("Authorization"), "Bearer fixture-access")
@@ -46,8 +47,8 @@ class StringRequestTests(unittest.TestCase):
         self.assertEqual(result["basic"]["today"], 2)
 
     def test_refresh_sends_only_refresh_payload(self):
-        with patch.object(api.OPENER, "open", return_value=response({"code": 0, "data": CFG})) as send:
-            api.request(CFG, "/auth/refresh", "POST", {"refresh_token": CFG["refresh_token"]}, authenticated=False)
+        with patch.object(api.OPENER, "open", return_value=response({"code": 0, "data": STRING_CFG})) as send:
+            api.request(STRING_CFG, "/auth/refresh", "POST", {"refresh_token": STRING_CFG["refresh_token"]}, authenticated=False)
         req = send.call_args.args[0]
         self.assertEqual(json.loads(req.data), {"refresh_token": "fixture-refresh"})
         self.assertIsNone(req.get_header("Authorization"))
@@ -55,9 +56,9 @@ class StringRequestTests(unittest.TestCase):
     def test_errors_are_actionable_and_do_not_echo_server_secrets(self):
         for code in (302, 401, 403, 409, 429, 500):
             with self.subTest(code=code):
-                error = urllib.error.HTTPError(api.BASE_URL, code, "error", {}, io.BytesIO(b"fixture-access fixture-refresh"))
+                error = urllib.error.HTTPError("https://www.string.ink/api/v1", code, "error", {}, io.BytesIO(b"fixture-access fixture-refresh"))
                 with patch.object(api.OPENER, "open", side_effect=error), self.assertRaises(api.APIError) as caught:
-                    api.request(CFG, "/user/checkin")
+                    api.request(STRING_CFG, "/user/checkin")
                 self.assertEqual(caught.exception.status, code)
                 self.assertEqual(caught.exception.transient, code in (429, 500))
                 self.assertNotIn("fixture", str(caught.exception))
@@ -65,10 +66,10 @@ class StringRequestTests(unittest.TestCase):
     def test_unexpected_envelopes_fail_closed(self):
         for data in ([], {"code": True, "data": {}}, {"code": 0}, {"code": 42, "message": "fixture-access"}):
             with self.subTest(data=data), patch.object(api.OPENER, "open", return_value=response(data)), self.assertRaises(api.APIError):
-                api.request(CFG, "/user/checkin")
+                api.request(STRING_CFG, "/user/checkin")
         raw = io.BytesIO(b"<html>please login</html>"); raw.status = 200
         with patch.object(api.OPENER, "open", return_value=raw), self.assertRaises(api.APIError):
-            api.request(CFG, "/user/checkin")
+            api.request(STRING_CFG, "/user/checkin")
 
     def test_opener_blocks_redirects(self):
         redirect = next(handler for handler in api.OPENER.handlers if isinstance(handler, api.NoRedirect))
@@ -78,7 +79,7 @@ class StringRequestTests(unittest.TestCase):
 class StringRunnerTests(unittest.TestCase):
     def test_already_signed_skips_post_and_mentions_tickets(self):
         with patch.object(api, "request", return_value=status(2, [{"id": 123, "track": "basic"}])) as request:
-            outcome, message = api.execute_check_in(CFG)
+            outcome, message = api.execute_check_in(STRING_CFG)
         self.assertEqual(outcome, "already")
         self.assertIn("+0.02", message)
         self.assertIn("手动开启", message)
@@ -87,31 +88,31 @@ class StringRunnerTests(unittest.TestCase):
 
     def test_sign_checks_result_after_post(self):
         with patch.object(api, "request", side_effect=[status(), {}, status(3)]) as request:
-            outcome, message = api.execute_check_in(CFG)
+            outcome, message = api.execute_check_in(STRING_CFG)
         self.assertEqual(outcome, "ok")
         self.assertIn("+0.03", message)
         self.assertEqual([call.args[2] for call in request.call_args_list], ["GET", "POST", "GET"])
 
     def test_unconfirmed_post_is_not_reported_as_success(self):
         with patch.object(api, "request", side_effect=[status(), {}, status()]):
-            self.assertEqual(api.execute_check_in(CFG)[0], "fail")
+            self.assertEqual(api.execute_check_in(STRING_CFG)[0], "fail")
 
     def test_unknown_status_or_disabled_rule_never_submits(self):
         disabled = status(); disabled["rules"]["basic"]["enabled"] = False
         malformed = status(); malformed["basic"]["today"] = "2"
         for data in ({}, None, malformed, disabled):
             with self.subTest(data=data), patch.object(api, "request", return_value=data) as request:
-                self.assertEqual(api.execute_check_in(CFG)[0], "fail")
+                self.assertEqual(api.execute_check_in(STRING_CFG)[0], "fail")
                 self.assertEqual(request.call_count, 1)
 
     def test_timeout_after_post_rechecks_before_another_submission(self):
         with patch.object(api, "request", side_effect=[status(), TimeoutError(), status(2)]) as request, patch.object(api.time, "sleep"):
-            self.assertEqual(api.execute_check_in(CFG)[0], "already")
+            self.assertEqual(api.execute_check_in(STRING_CFG)[0], "already")
         self.assertEqual([call.args[2] for call in request.call_args_list], ["GET", "POST", "GET"])
 
     def test_conflict_is_verified(self):
         with patch.object(api, "request", side_effect=[status(), api.APIError("conflict", 409), status(2)]):
-            self.assertEqual(api.execute_check_in(CFG)[0], "ok")
+            self.assertEqual(api.execute_check_in(STRING_CFG)[0], "ok")
 
     def test_rotated_tokens_are_saved_before_using_them(self):
         tokens = {"access_token": "new-access", "refresh_token": "new-refresh"}
@@ -122,16 +123,16 @@ class StringRunnerTests(unittest.TestCase):
                 return tokens
             if cfg["access_token"] == "fixture-access":
                 raise api.APIError("expired", 401)
-            save.assert_called_once_with(tokens, {key: CFG[key] for key in tokens})
+            save.assert_called_once_with(tokens, {key: STRING_CFG[key] for key in tokens})
             self.assertEqual(cfg["access_token"], "new-access")
             return status(2)
         with patch.object(api, "request", side_effect=request):
-            self.assertEqual(api.execute_check_in(CFG, save_tokens=save)[0], "already")
-        self.assertEqual(CFG["access_token"], "fixture-access")
+            self.assertEqual(api.execute_check_in(STRING_CFG, save_tokens=save)[0], "already")
+        self.assertEqual(STRING_CFG["access_token"], "fixture-access")
 
     def test_config_change_during_refresh_stops_task(self):
-        with patch.object(api, "request", side_effect=[api.APIError("expired", 401), CFG]) as request:
-            result = api.execute_check_in(CFG, save_tokens=Mock(return_value=False))
+        with patch.object(api, "request", side_effect=[api.APIError("expired", 401), STRING_CFG]) as request:
+            result = api.execute_check_in(STRING_CFG, save_tokens=Mock(return_value=False))
         self.assertEqual(result[0], "fail")
         self.assertIn("配置已更改", result[1])
         self.assertEqual(request.call_count, 2)
@@ -139,19 +140,19 @@ class StringRunnerTests(unittest.TestCase):
     def test_expired_or_invalid_refresh_stops_without_leaking(self):
         for refreshed in (None, {"access_token": "new"}, api.APIError("expired", 401)):
             with self.subTest(refreshed=refreshed), patch.object(api, "request", side_effect=[api.APIError("expired", 401), refreshed]) as request:
-                self.assertEqual(api.execute_check_in(CFG, save_tokens=Mock())[0], "fail")
+                self.assertEqual(api.execute_check_in(STRING_CFG, save_tokens=Mock())[0], "fail")
                 self.assertEqual(request.call_count, 2)
         with patch.object(api, "request", side_effect=api.APIError("expired", 401)) as request:
-            self.assertEqual(api.execute_check_in({**CFG, "refresh_token": ""})[0], "fail")
+            self.assertEqual(api.execute_check_in({**STRING_CFG, "refresh_token": ""})[0], "fail")
             self.assertEqual(request.call_count, 1)
 
     def test_retry_exhaustion_and_cancellation(self):
         with patch.object(api, "request", side_effect=api.APIError("busy", 429, True)) as request, patch.object(api.time, "sleep"):
-            self.assertEqual(api.execute_check_in(CFG)[0], "fail")
+            self.assertEqual(api.execute_check_in(STRING_CFG)[0], "fail")
             self.assertEqual(request.call_count, 3)
         stop = threading.Event(); stop.set()
         with patch.object(api, "request") as request:
-            self.assertEqual(api.execute_check_in(CFG, stop)[0], "fail")
+            self.assertEqual(api.execute_check_in(STRING_CFG, stop)[0], "fail")
             request.assert_not_called()
 
 
@@ -186,6 +187,9 @@ class MultiSiteTests(unittest.TestCase):
         self.assertEqual(string["cookie"], "")
         self.assertEqual(string["run_at"], "09:00")
         self.assertTrue(string["credential_configured"])
+        self.assertIsNone(self.services["xingchi"].status()["next_run"])
+        self.assertEqual(self.send("config?site=xingchi", {"access_token": "fixture-xingchi"}, "PUT").status_code, 200)
+        self.assertEqual(self.stores["string"].get()["access_token"], CFG["access_token"])
         for site, service in self.services.items():
             self.assertIsNotNone(service.status()["next_run"])
             with patch.object(service, "runner", return_value=("ok", site)), patch("panel.service.notify_check_in"):
@@ -261,9 +265,9 @@ class MultiSiteTests(unittest.TestCase):
         socket = Mock()
         socket.recv.return_value = json.dumps({"id": 1, "result": {"result": {"value": CFG}}})
         with patch("panel.browser.urllib.request.urlopen", return_value=response(pages)), patch("panel.browser.websocket.create_connection", return_value=socket) as connect:
-            self.assertEqual(browser._string_tokens(), {key: CFG[key] for key in ("access_token", "refresh_token")})
+            self.assertEqual(browser._login_tokens(), {key: CFG[key] for key in ("access_token", "refresh_token")})
         connect.assert_called_once_with("ws://fixture/5", timeout=3, suppress_origin=True)
-        self.assertIn("location.origin !== 'https://www.string.ink'", json.loads(socket.send.call_args.args[0])["params"]["expression"])
+        self.assertIn('location.origin !== "https://www.string.ink"', json.loads(socket.send.call_args.args[0])["params"]["expression"])
         socket.close.assert_called_once()
 
 

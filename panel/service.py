@@ -9,8 +9,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from nodeseek_signin import execute_check_in, notify_check_in, safe_message
-from .config import SITES
-from . import string_signin
+from .config import SITES, TOKEN_ORIGINS
+from . import token_signin
 
 log = logging.getLogger("nodeseek")
 
@@ -32,7 +32,7 @@ class Service:
     def __init__(self, directory, config, runner=None):
         self.config = config
         self.site = config.site
-        self.runner = runner or (self._string_runner if self.site == "string" else execute_check_in)
+        self.runner = runner or (self._token_runner if self.site in TOKEN_ORIGINS else execute_check_in)
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.wake = threading.Event()
@@ -52,8 +52,8 @@ class Service:
         Path(directory, "history.sqlite3").chmod(0o600)
         self.refresh_schedule()
 
-    def _string_runner(self, cfg, stop_event=None):
-        return string_signin.execute_check_in(cfg, stop_event, save_tokens=self.config.rotate_tokens)
+    def _token_runner(self, cfg, stop_event=None):
+        return token_signin.execute_check_in({**cfg, "site": self.site}, stop_event, save_tokens=self.config.rotate_tokens)
 
     def state(self, key):
         row = self.db.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
@@ -94,7 +94,8 @@ class Service:
                 return False
             cfg = self.config.get()
             if not self.config.has_credentials(cfg):
-                raise ValueError("请先配置 String 登录 Token" if self.site == "string" else "请先配置 NodeSeek Cookie")
+                credential = "登录 Token" if self.site in TOKEN_ORIGINS else "Cookie"
+                raise ValueError(f"请先配置 {SITES[self.site]} {credential}")
             self.busy = True
             rowid = self.db.execute("INSERT INTO history(started_at,source,status,message) VALUES (?,?,'running','正在签到')", (utcnow().isoformat(), source)).lastrowid
             self.db.commit()
@@ -118,8 +119,8 @@ class Service:
                 self.db.execute("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT 1000)")
                 self.db.commit()
             log.info("%s 签到 %s: %s", SITES[self.site], status, message)
-            if self.site == "string":
-                notify_check_in({**cfg, "site_name": "String"}, status, message)
+            if self.site in TOKEN_ORIGINS:
+                notify_check_in({**cfg, "site_name": SITES[self.site]}, status, message)
             else:
                 notify_check_in(cfg, status, message)
         finally:

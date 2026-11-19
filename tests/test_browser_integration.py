@@ -20,9 +20,14 @@ from panel.service import Service
 @unittest.skipUnless(os.environ.get('RUN_BROWSER_TESTS') == '1', '仅在完整 Docker 镜像中运行')
 class BrowserIntegrationTests(unittest.TestCase):
     def test_string_local_storage_capture_and_cleanup(self):
-        """拦截导航，用离线 String 来源页面验证真实 Chromium 的 localStorage 导入。"""
+        self.check_token_capture("string", "https://www.string.ink")
+
+    def test_xingchi_local_storage_capture_and_cleanup(self):
+        self.check_token_capture("xingchi", "https://xingchiapi.com")
+
+    def check_token_capture(self, site, origin):
         with tempfile.TemporaryDirectory() as directory:
-            config = ConfigStore(directory, site='string')
+            config = ConfigStore(directory, site=site)
             config.update({'enabled': False})
             service = Service(directory, config)
             browser = BrowserManager(config, service)
@@ -30,7 +35,8 @@ class BrowserIntegrationTests(unittest.TestCase):
 
             def launch(command, **kwargs):
                 if command[0] == 'chromium':
-                    command = command[:-1] + ['--app=data:text/html,<title>Offline String fixture</title>']
+                    self.assertEqual(command[-1], '--app=' + origin + '/dashboard')
+                    command = command[:-1] + ['--app=data:text/html,<title>Offline login fixture</title>']
                 return original_popen(command, **kwargs)
 
             try:
@@ -46,14 +52,14 @@ class BrowserIntegrationTests(unittest.TestCase):
                     page = next(p for p in json.load(response) if p['type'] == 'page')
                 ws = websocket.create_connection(page['webSocketDebuggerUrl'], timeout=10, suppress_origin=True)
                 try:
-                    browser._command(ws, 10, 'Fetch.enable', {'patterns': [{'urlPattern': 'https://www.string.ink/*'}]})
-                    ws.send(json.dumps({'id': 11, 'method': 'Page.navigate', 'params': {'url': 'https://www.string.ink/dashboard'}}))
+                    browser._command(ws, 10, 'Fetch.enable', {'patterns': [{'urlPattern': origin + '/*'}]})
+                    ws.send(json.dumps({'id': 11, 'method': 'Page.navigate', 'params': {'url': origin + '/dashboard'}}))
                     while True:
                         event = json.loads(ws.recv())
                         if event.get('method') == 'Fetch.requestPaused':
-                            html = '''<title>Offline String login</title><script>
-                                localStorage.setItem('auth_token', 'fixture-string-access');
-                                localStorage.setItem('refresh_token', 'fixture-string-refresh');
+                            html = '''<title>Offline login</title><script>
+                                localStorage.setItem('auth_token', 'fixture-site-access');
+                                localStorage.setItem('refresh_token', 'fixture-site-refresh');
                                 localStorage.setItem('other-private-data', 'must-not-import');
                             </script><p>Fixture login complete</p>'''
                             browser._command(ws, 12, 'Fetch.fulfillRequest', {
@@ -68,8 +74,8 @@ class BrowserIntegrationTests(unittest.TestCase):
                 while not browser.status()['imported_at'] and time.monotonic() < deadline:
                     time.sleep(.2)
                 self.assertTrue(browser.status()['imported_at'])
-                self.assertEqual(config.get()['access_token'], 'fixture-string-access')
-                self.assertEqual(config.get()['refresh_token'], 'fixture-string-refresh')
+                self.assertEqual(config.get()['access_token'], 'fixture-site-access')
+                self.assertEqual(config.get()['refresh_token'], 'fixture-site-refresh')
                 self.assertNotIn('must-not-import', config.path.read_text())
                 self.assertIn('Chrome/', config.get()['user_agent'])
                 self.assertFalse(browser.status()['running'])

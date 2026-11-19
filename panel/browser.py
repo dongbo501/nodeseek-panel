@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import websocket
-from .config import SITES
+from .config import SITES, TOKEN_ORIGINS
 
 log = logging.getLogger("nodeseek")
 
@@ -70,7 +70,8 @@ class BrowserManager:
             # 不把管理密码或 NodeSeek Cookie 传入浏览器子进程。
             for key in ("ADMIN_PASSWORD", "NODESEEK_COOKIE"):
                 env.pop(key, None)
-            login_url = "https://www.string.ink/dashboard" if self.config.site == "string" else "https://www.nodeseek.com/"
+            login_url = (TOKEN_ORIGINS[self.config.site] + "/dashboard"
+                         if self.config.site in TOKEN_ORIGINS else "https://www.nodeseek.com/")
             commands = [
                 ["Xvfb", ":99", "-screen", "0", "1280x800x24", "-nolisten", "tcp", "-ac"],
                 ["chromium", "--no-sandbox", "--disable-dev-shm-usage", "--no-first-run", "--no-default-browser-check", "--disable-sync", "--disable-background-networking", "--disable-extensions", "--disable-breakpad", "--disable-crash-reporter", "--password-store=basic", "--remote-debugging-port=9222", "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + self.profile, "--window-size=1280,800", "--start-maximized", "--app=" + login_url],
@@ -98,8 +99,8 @@ class BrowserManager:
     def _cdp(self):
         with urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=3) as r:
             info = json.load(r)
-        if self.config.site == "string":
-            return self._string_tokens(), info["User-Agent"]
+        if self.config.site in TOKEN_ORIGINS:
+            return self._login_tokens(), info["User-Agent"]
         ws = websocket.create_connection(info["webSocketDebuggerUrl"], timeout=3, suppress_origin=True)
         try:
             ws.send(json.dumps({"id": 1, "method": "Storage.getCookies"}))
@@ -112,22 +113,23 @@ class BrowserManager:
         finally:
             ws.close()
 
-    def _string_tokens(self):
+    def _login_tokens(self):
+        origin = TOKEN_ORIGINS[self.config.site]
         with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=3) as response:
             pages = json.load(response)
         for page in pages:
             url = urlsplit(page.get("url", ""))
-            if page.get("type") != "page" or url.scheme != "https" or url.netloc != "www.string.ink":
+            if page.get("type") != "page" or (url.scheme, url.netloc) != ("https", urlsplit(origin).netloc):
                 continue
             ws = websocket.create_connection(page["webSocketDebuggerUrl"], timeout=3, suppress_origin=True)
             try:
                 result = self._command(ws, 1, "Runtime.evaluate", {
                     "expression": """(() => {
-                        if (location.origin !== 'https://www.string.ink') return null;
+                        if (location.origin !== %s) return null;
                         const access_token = localStorage.getItem('auth_token');
                         const refresh_token = localStorage.getItem('refresh_token');
                         return access_token && refresh_token ? {access_token, refresh_token} : null;
-                    })()""",
+                    })()""" % json.dumps(origin),
                     "returnByValue": True,
                 })
                 tokens = result.get("result", {}).get("value")
@@ -198,7 +200,7 @@ class BrowserManager:
                 raise ValueError("浏览器尚未准备好，请稍后重试") from None
             if not cookie:
                 raise ValueError("尚未检测到登录会话，请先在下方浏览器中完成登录")
-            credentials = cookie if self.config.site == "string" else {"cookie": cookie}
+            credentials = cookie if self.config.site in TOKEN_ORIGINS else {"cookie": cookie}
             self.config.update({**credentials, "user_agent": ua})
             self.service.refresh_schedule()
             from .service import utcnow
